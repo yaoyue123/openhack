@@ -1,0 +1,35 @@
+{
+  // LLM configuration
+  "llm": {
+    "baseURL": "http://localhost:11434/v1",
+    "model": "llama3"
+  },
+  // MCP servers
+  "mcpServers": {
+    "pwn-tools": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/pwn-server.ts"],
+      "env": {}
+    },
+    "web-tools": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/web-server.ts"],
+      "env": {}
+    },
+    "rev-tools": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/rev-server.ts"],
+      "env": {}
+    },
+    "forensics-tools": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/forensics-server.ts"],
+      "env": {}
+    }
+  },
+  // Docker configuration
+  "docker": {
+    "enabled": true,
+    "preferContainer": true
+  }
+}
