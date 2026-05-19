@@ -4,8 +4,10 @@ import { hideBin } from "yargs/helpers";
 import { Effect } from "effect";
 import { createAppRuntime, ConfigService } from "./runtime/app.js";
 import { createProvider } from "./llm/provider.js";
-import { streamLLMResponse } from "./llm/stream.js";
+import { runAgentLoop } from "./llm/agent-loop.js";
+import { ToolRegistry } from "./tool/registry.js";
 import type { OpenhackConfig } from "./config/schema.js";
+import type { ToolContext } from "./tool/types.js";
 
 const cli = yargs(hideBin(process.argv))
   .scriptName("openhack")
@@ -32,17 +34,27 @@ const cli = yargs(hideBin(process.argv))
           : config.llm;
 
         const provider = createProvider(llmConfig);
-        const model = provider.languageModel();
+        const registry = ToolRegistry.createBuiltin();
+        const toolContext: ToolContext = {
+          workingDir: process.cwd(),
+          sessionId: "cli",
+          permissionCheck: async () => true,
+        };
 
-        for await (const event of streamLLMResponse({
-          model,
-          system: "You are openhack, a CTF security assistant.",
+        await runAgentLoop({
+          provider,
           messages: [{ role: "user", content: message }],
-        })) {
-          if (event.type === "text" && event.content) {
-            process.stdout.write(event.content);
-          }
-        }
+          system: "You are openhack, a CTF security assistant.",
+          tools: registry,
+          toolContext,
+          onToken: (token) => process.stdout.write(token),
+          onToolCall: (tool, args) => {
+            process.stdout.write(`\n[tool: ${tool}]\n`);
+          },
+          onFlag: (flag) => {
+            process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
+          },
+        });
         process.stdout.write("\n");
       } finally {
         await runtime.dispose();
