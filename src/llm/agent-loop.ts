@@ -3,7 +3,17 @@ import type { ToolCallPart, ToolResultPart } from "@ai-sdk/provider-utils";
 import type { Provider } from "./provider.js";
 import type { ToolRegistry } from "../tool/registry.js";
 import type { ToolContext } from "../tool/types.js";
+import type { PermissionRule } from "../config/schema.js";
 import { detectFlags } from "../tool/flag.js";
+import { evaluate, type PermissionAction } from "../permission/evaluate.js"
+
+function getTargetPattern(toolId: string, args: Record<string, any>): string {
+  if (toolId === "bash") return args.command ?? ""
+  if (args.filePath) return args.filePath
+  if (args.pattern) return args.pattern
+  if (args.url) return args.url
+  return "*"
+}
 
 export interface AgentLoopOptions {
   provider: Provider;
@@ -12,6 +22,7 @@ export interface AgentLoopOptions {
   tools: ToolRegistry;
   toolContext: ToolContext;
   maxIterations?: number;
+  permissions?: PermissionRule[];
   onToken?: (token: string) => void;
   onToolCall?: (tool: string, args: any) => void;
   onFlag?: (flag: string) => void;
@@ -26,6 +37,7 @@ export async function runAgentLoop(
     tools,
     toolContext,
     maxIterations = 20,
+    permissions = [],
     onToken,
     onToolCall,
     onFlag,
@@ -52,6 +64,14 @@ export async function runAgentLoop(
         parameters: tool.parameters,
         execute: async (args: Record<string, any>) => {
           onToolCall?.(tool.id, args);
+          const target = getTargetPattern(tool.id, args);
+          const action: PermissionAction = evaluate(tool.id, target, permissions);
+          if (action === "deny") {
+            return { output: "Permission denied", error: true };
+          }
+          if (action === "ask") {
+            return { output: "Permission requires confirmation (ask mode)", error: true };
+          }
           const result = await tool.execute(args, toolContext);
           if (result.output) {
             emitFlags(result.output);

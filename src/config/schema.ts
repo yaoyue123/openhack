@@ -4,13 +4,16 @@ export interface LLMConfig {
   apiKey: string;
 }
 
+export type PermissionAction = "allow" | "deny" | "ask";
+
 export interface PermissionRule {
   tool: string;
-  patterns: string[];
+  pattern: string;
+  action: PermissionAction;
 }
 
 export interface PermissionsConfig {
-  default: ("allow" | "deny" | "ask")[];
+  default: PermissionAction[];
   rules: PermissionRule[];
 }
 
@@ -42,11 +45,11 @@ export const DEFAULT_CONFIG: OpenhackConfig = {
   permissions: {
     default: ["ask"],
     rules: [
-      { tool: "read", patterns: ["**/*"] },
-      { tool: "glob", patterns: ["**/*"] },
-      { tool: "grep", patterns: ["**/*"] },
-      { tool: "write", patterns: ["**/*"] },
-      { tool: "bash", patterns: ["*"] },
+      { tool: "read", pattern: "*", action: "allow" },
+      { tool: "glob", pattern: "*", action: "allow" },
+      { tool: "grep", pattern: "*", action: "allow" },
+      { tool: "write", pattern: "*", action: "allow" },
+      { tool: "bash", pattern: "*", action: "allow" },
     ],
   },
   mcpServers: {},
