@@ -46,20 +46,25 @@ const cli = yargs(hideBin(process.argv))
           permissionCheck: async () => true,
         };
 
-        await runAgentLoop({
-          provider,
-          messages: [{ role: "user", content: message }],
-          system: "You are openhack, a CTF security assistant.",
-          tools: registry,
-          toolContext,
-          onToken: (token) => process.stdout.write(token),
-          onToolCall: (tool, args) => {
-            process.stdout.write(`\n[tool: ${tool}]\n`);
-          },
-          onFlag: (flag) => {
-            process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
-          },
-        });
+        try {
+          await runAgentLoop({
+            provider,
+            messages: [{ role: "user", content: message }],
+            system: "You are openhack, a CTF security assistant.",
+            tools: registry,
+            toolContext,
+            onToken: (token) => process.stdout.write(token),
+            onToolCall: (tool, args) => {
+              process.stdout.write(`\n[tool: ${tool}]\n`);
+            },
+            onFlag: (flag) => {
+              process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
+            },
+          });
+        } catch (err: any) {
+          console.error(`\nError: ${err.message || err}`);
+          if (err.cause) console.error(`Cause: ${err.cause}`);
+        }
         process.stdout.write("\n");
       } finally {
         await runtime.dispose();
@@ -113,25 +118,30 @@ const cli = yargs(hideBin(process.argv))
         const pathContext =
           paths.length > 0 ? `\n\nWorking directory: ${paths.join(", ")}` : "";
 
-        await runAgentLoop({
-          provider,
-          messages: [
-            {
-              role: "user",
-              content: `Solve this CTF challenge using the ${agent.name} agent.${pathContext}`,
+        try {
+          await runAgentLoop({
+            provider,
+            messages: [
+              {
+                role: "user",
+                content: `Solve this CTF challenge using the ${agent.name} agent.${pathContext}`,
+              },
+            ],
+            system: agent.systemPrompt,
+            tools: registry,
+            toolContext,
+            onToken: (token) => process.stdout.write(token),
+            onToolCall: (tool, a) => {
+              process.stdout.write(`\n[tool: ${tool}]\n`);
             },
-          ],
-          system: agent.systemPrompt,
-          tools: registry,
-          toolContext,
-          onToken: (token) => process.stdout.write(token),
-          onToolCall: (tool, a) => {
-            process.stdout.write(`\n[tool: ${tool}]\n`);
-          },
-          onFlag: (flag) => {
-            process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
-          },
-        });
+            onFlag: (flag) => {
+              process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
+            },
+          });
+        } catch (err: any) {
+          console.error(`\nError: ${err.message || err}`);
+          if (err.cause) console.error(`Cause: ${err.cause}`);
+        }
         process.stdout.write("\n");
       } finally {
         await runtime.dispose();
