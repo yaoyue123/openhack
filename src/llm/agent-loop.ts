@@ -1,5 +1,4 @@
-import { streamText, type ModelMessage } from "ai";
-import type { ToolCallPart, ToolResultPart } from "@ai-sdk/provider-utils";
+import { streamText, stepCountIs, type ModelMessage } from "ai";
 import type { Provider } from "./provider.js";
 import type { ToolRegistry } from "../tool/registry.js";
 import type { ToolContext } from "../tool/types.js";
@@ -43,7 +42,6 @@ export async function runAgentLoop(
     onFlag,
   } = options;
 
-  const messages = [...options.messages];
   const allFlags = new Set<string>();
 
   const emitFlags = (text: string) => {
@@ -56,89 +54,52 @@ export async function runAgentLoop(
     }
   };
 
-  for (let i = 0; i < maxIterations; i++) {
-    const aiTools: Record<string, any> = {};
-    for (const tool of tools.all()) {
-      aiTools[tool.id] = {
-        description: tool.description,
-        parameters: tool.parameters,
-        execute: async (args: Record<string, any>) => {
-          onToolCall?.(tool.id, args);
+  const aiTools: Record<string, any> = {};
+  for (const tool of tools.all()) {
+    aiTools[tool.id] = {
+      description: tool.description,
+      parameters: tool.parameters,
+      execute: async (args: Record<string, any>) => {
+        onToolCall?.(tool.id, args);
+        if (permissions.length > 0) {
           const target = getTargetPattern(tool.id, args);
           const action: PermissionAction = evaluate(tool.id, target, permissions);
           if (action === "deny") {
-            return { output: "Permission denied", error: true };
+            return "Permission denied";
           }
           if (action === "ask") {
-            return { output: "Permission requires confirmation (ask mode)", error: true };
+            return "Permission requires confirmation (ask mode)";
           }
-          const result = await tool.execute(args, toolContext);
-          if (result.output) {
-            emitFlags(result.output);
-          }
-          return result;
-        },
-      };
-    }
+        }
+        const result = await tool.execute(args, toolContext);
+        if (result.output) {
+          emitFlags(result.output);
+        }
+        return result.output;
+      },
+    };
+  }
 
-    const result = streamText({
-      model: provider.languageModel(),
-      system,
-      messages,
-      tools: aiTools,
-    });
+  const result = streamText({
+    model: provider.languageModel(),
+    system,
+    messages: options.messages,
+    tools: aiTools,
+    stopWhen: stepCountIs(maxIterations),
+  });
 
-    let assistantText = "";
-    const toolCallParts: ToolCallPart[] = [];
-    const toolResultParts: ToolResultPart[] = [];
-
-    for await (const part of result.fullStream) {
-      if (part.type === "text-delta") {
-        assistantText += part.text;
-        onToken?.(part.text);
-      } else if (part.type === "tool-call") {
-        toolCallParts.push({
-          type: "tool-call",
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          input: part.input,
-        });
-      } else if (part.type === "tool-result") {
-        toolResultParts.push({
-          type: "tool-result",
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          output: part.output,
-        } as ToolResultPart);
-      }
-    }
-
-    if (assistantText) {
-      emitFlags(assistantText);
-    }
-
-    const assistantContent: any[] = [];
-    if (assistantText) {
-      assistantContent.push({ type: "text", text: assistantText });
-    }
-    assistantContent.push(...toolCallParts);
-
-    messages.push({
-      role: "assistant",
-      content: assistantContent,
-    });
-
-    if (toolCallParts.length === 0) {
-      break;
-    }
-
-    for (const tr of toolResultParts) {
-      messages.push({
-        role: "tool",
-        content: [tr],
-      });
+  let fullText = "";
+  for await (const part of result.fullStream) {
+    if (part.type === "text-delta") {
+      fullText += part.text;
+      onToken?.(part.text);
     }
   }
 
-  return messages;
+  if (fullText) {
+    emitFlags(fullText);
+  }
+
+  const response = await result.response;
+  return response.messages;
 }
