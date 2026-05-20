@@ -11,11 +11,11 @@ export class ConfigService extends Context.Tag("@openhack/Config")<
   ConfigInterface
 >() {}
 
-export function ConfigLive(projectDir: string) {
+export function ConfigLive() {
   return Layer.effect(
     ConfigService,
     Effect.tryPromise({
-      try: () => new ConfigLoader().load(projectDir),
+      try: () => new ConfigLoader().load(),
       catch: (error) => new Error(`Failed to load config: ${String(error)}`),
     }).pipe(
       Effect.map(
@@ -39,8 +39,8 @@ export interface AppRuntime {
   dispose: () => Promise<void>;
 }
 
-export function createAppRuntime(projectDir: string): AppRuntime {
-  const layer = ConfigLive(projectDir);
+export function createAppRuntime(_projectDir?: string): AppRuntime {
+  const layer = ConfigLive();
   const rt = ManagedRuntime.make(layer);
   return {
     runPromise: <A, E>(effect: Effect.Effect<A, E, ConfigService>) =>
