@@ -1,33 +1,44 @@
 {
-  // LLM configuration
+  // LLM configuration (required)
   "llm": {
-    "baseURL": "http://localhost:11434/v1",
-    "model": "llama3"
+    // OpenAI-compatible API endpoint
+    "baseURL": "https://api.siliconflow.cn/v1",
+    // Model identifier
+    "model": "deepseek-ai/DeepSeek-V4-Flash",
+    // API key (or use OPENHACK_LLM_API_KEY env var)
+    "apiKey": ""
   },
-  // MCP servers
-  "mcpServers": {
-    "pwn-tools": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp/pwn-server.ts"],
-      "env": {}
-    },
-    "web-tools": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp/web-server.ts"],
-      "env": {}
-    },
-    "rev-tools": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp/rev-server.ts"],
-      "env": {}
-    },
-    "forensics-tools": {
-      "command": "npx",
-      "args": ["tsx", "src/mcp/forensics-server.ts"],
-      "env": {}
-    }
+
+  // Agent behavior
+  "agent": {
+    // Maximum tool-calling iterations per solve
+    "maxSteps": 25,
+    // Timeout per challenge in seconds
+    "timeout": 300
   },
-  // Docker configuration
+
+  // Skills context injection
+  "skills": {
+    // Maximum bytes of companion skill files injected into prompt
+    "maxCompanionBytes": 15000
+  },
+
+  // Permission policy
+  "permissions": {
+    "default": ["ask"],
+    "rules": [
+      { "tool": "read", "pattern": "*", "action": "allow" },
+      { "tool": "glob", "pattern": "*", "action": "allow" },
+      { "tool": "grep", "pattern": "*", "action": "allow" },
+      { "tool": "write", "pattern": "*", "action": "allow" },
+      { "tool": "bash", "pattern": "*", "action": "allow" }
+    ]
+  },
+
+  // MCP servers (optional)
+  "mcpServers": {},
+
+  // Docker runtime (optional)
   "docker": {
     "enabled": true,
     "preferContainer": true
