@@ -72,10 +72,16 @@ export async function runAgentLoop(
           }
         }
         const result = await tool.execute(args, toolContext);
-        if (result.output) {
-          emitFlags(result.output);
+        let output = result.output ?? "";
+        if (output.length > 10000) {
+          output =
+            output.slice(0, 10000) +
+            `\n...(truncated, ${output.length} total bytes. Use grep/head/tail to get specific parts)`;
         }
-        return result.output;
+        if (output) {
+          emitFlags(output);
+        }
+        return output;
       },
     };
   }
