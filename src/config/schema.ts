@@ -38,9 +38,32 @@ export interface SkillsConfig {
   maxCompanionBytes: number;
 }
 
+export interface HarnessConfig {
+  loop: {
+    windowSize: number;
+    similarityThreshold: number;
+    maxRepeats: number;
+  };
+  budget: {
+    maxTokens: number;
+    compressThreshold: number;
+    preserveRecentSteps: number;
+  };
+  terminator: {
+    maxStepsWithoutProgress: number;
+  };
+}
+
+export interface MemoryConfig {
+  enabled: boolean;
+  autoLog: boolean;
+}
+
 export interface OpenhackConfig {
   llm: LLMConfig;
   agent: AgentConfig;
+  harness: HarnessConfig;
+  memory: MemoryConfig;
   skills: SkillsConfig;
   permissions: PermissionsConfig;
   mcpServers: Record<string, MCPServerConfig>;
@@ -56,6 +79,25 @@ export const DEFAULT_CONFIG: OpenhackConfig = {
   agent: {
     maxSteps: 25,
     timeout: 300,
+  },
+  harness: {
+    loop: {
+      windowSize: 5,
+      similarityThreshold: 0.8,
+      maxRepeats: 3,
+    },
+    budget: {
+      maxTokens: 100000,
+      compressThreshold: 70000,
+      preserveRecentSteps: 5,
+    },
+    terminator: {
+      maxStepsWithoutProgress: 10,
+    },
+  },
+  memory: {
+    enabled: true,
+    autoLog: true,
   },
   skills: {
     maxCompanionBytes: 15000,

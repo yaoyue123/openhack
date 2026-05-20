@@ -4,7 +4,7 @@ import { hideBin } from "yargs/helpers";
 import { Effect } from "effect";
 import { createAppRuntime, ConfigService } from "./runtime/app.js";
 import { createProvider } from "./llm/provider.js";
-import { runAgentLoop } from "./llm/agent-loop.js";
+import { runAgentLoop } from "./agent-loop.js";
 import { ToolRegistry } from "./tool/registry.js";
 import type { OpenhackConfig } from "./config/schema.js";
 import type { ToolContext } from "./tool/types.js";

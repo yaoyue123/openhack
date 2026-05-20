@@ -8,6 +8,10 @@ import { GrepTool } from "./grep.js";
 import { WebFetchTool } from "./webfetch.js";
 import { FlagTool } from "./flag.js";
 import { PythonTool } from "./python.js";
+import { StateReadTool } from "./state-read.js";
+import { StateWriteTool } from "./state-write.js";
+import { MemoryQueryTool } from "./memory-query.js";
+import { MemoryWriteTool } from "./memory-write.js";
 
 export class ToolRegistry {
   private tools: Map<string, ToolDef> = new Map();
@@ -24,6 +28,10 @@ export class ToolRegistry {
       WebFetchTool,
       FlagTool,
       PythonTool,
+      StateReadTool,
+      StateWriteTool,
+      MemoryQueryTool,
+      MemoryWriteTool,
     ];
     for (const tool of builtins) reg.register(tool);
     return reg;
