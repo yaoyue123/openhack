@@ -1,7 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import type { OpenhackConfig } from "./schema.js";
 import { DEFAULT_CONFIG } from "./schema.js";
+
+export const CONFIG_DIR = join(homedir(), ".config", "openhack");
+export const CONFIG_PATH = join(CONFIG_DIR, "openhack.jsonc");
 
 export function deepMerge<T extends Record<string, unknown>>(
   target: T,
@@ -30,7 +34,7 @@ export function deepMerge<T extends Record<string, unknown>>(
   return result as T;
 }
 
-function stripJsoncComments(text: string): string {
+export function stripJsoncComments(text: string): string {
   let result = "";
   let i = 0;
   let inString = false;
@@ -53,27 +57,60 @@ function stripJsoncComments(text: string): string {
 }
 
 export class ConfigLoader {
-  async load(projectDir: string): Promise<OpenhackConfig> {
-    const jsoncPath = join(projectDir, "openhack.jsonc");
-    const jsonPath = join(projectDir, "openhack.json");
+  private configPath: string;
 
+  constructor(configPath?: string) {
+    this.configPath = configPath ?? CONFIG_PATH;
+  }
+
+  async load(): Promise<OpenhackConfig> {
     let raw: string | null = null;
     try {
-      raw = await readFile(jsoncPath, "utf-8");
+      raw = await readFile(this.configPath, "utf-8");
     } catch {
-      try {
-        raw = await readFile(jsonPath, "utf-8");
-      } catch {
-        // No config file found — use defaults
-      }
+      // No config file — use defaults
     }
 
+    let config: OpenhackConfig;
     if (raw === null) {
-      return { ...DEFAULT_CONFIG };
+      config = { ...DEFAULT_CONFIG };
+    } else {
+      const cleaned = stripJsoncComments(raw);
+      const parsed = JSON.parse(cleaned) as Partial<OpenhackConfig>;
+      config = deepMerge({ ...DEFAULT_CONFIG }, parsed);
     }
 
-    const cleaned = stripJsoncComments(raw);
-    const parsed = JSON.parse(cleaned) as Partial<OpenhackConfig>;
-    return deepMerge({ ...DEFAULT_CONFIG }, parsed);
+    // Env vars override config file
+    if (process.env.OPENHACK_LLM_BASE_URL) {
+      config.llm.baseURL = process.env.OPENHACK_LLM_BASE_URL;
+    }
+    if (process.env.OPENHACK_LLM_MODEL) {
+      config.llm.model = process.env.OPENHACK_LLM_MODEL;
+    }
+    if (process.env.OPENHACK_LLM_API_KEY) {
+      config.llm.apiKey = process.env.OPENHACK_LLM_API_KEY;
+    }
+
+    return config;
+  }
+
+  async save(config: Partial<OpenhackConfig>): Promise<void> {
+    const dir = join(this.configPath, "..");
+    await mkdir(dir, { recursive: true });
+    const json = JSON.stringify(config, null, 2);
+    await writeFile(this.configPath, json, "utf-8");
+  }
+
+  async exists(): Promise<boolean> {
+    try {
+      await readFile(this.configPath, "utf-8");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  getConfigPath(): string {
+    return this.configPath;
   }
 }
