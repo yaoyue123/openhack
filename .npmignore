@@ -1,0 +1,12 @@
+src/
+docs/
+benchmark/
+.github/
+*.test.ts
+__tests__/
+tsconfig.json
+tsup.config.ts
+vitest.config.*
+.omo/
+.openh
+ack/
