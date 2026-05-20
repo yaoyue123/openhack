@@ -28,6 +28,7 @@ export interface ParsedSkill {
   frontmatter: SkillFrontmatter
   content: string
   files: string[]
+  fileNames: string[]
 }
 
 export function parseSkill(filePath: string, content: string): ParsedSkill | null {
@@ -41,5 +42,6 @@ export function parseSkill(filePath: string, content: string): ParsedSkill | nul
     frontmatter: data as SkillFrontmatter,
     content: parsed.content,
     files: [],
+    fileNames: [],
   }
 }

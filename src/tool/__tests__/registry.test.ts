@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import { ToolRegistry } from "../registry.js";
 
 describe("ToolRegistry", () => {
-  it("createBuiltin returns all 8 tools", () => {
+  it("createBuiltin returns all 9 tools", () => {
     const registry = ToolRegistry.createBuiltin();
     const tools = registry.all();
-    expect(tools).toHaveLength(8);
+    expect(tools).toHaveLength(9);
 
     const ids = tools.map((t) => t.id).sort();
     expect(ids).toEqual(
-      ["bash", "read", "write", "edit", "glob", "grep", "webfetch", "flag"].sort(),
+      ["bash", "read", "write", "edit", "glob", "grep", "webfetch", "flag", "python"].sort(),
     );
   });
 

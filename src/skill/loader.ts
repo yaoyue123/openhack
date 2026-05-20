@@ -31,9 +31,7 @@ export async function discoverSkills(projectDir: string): Promise<ParsedSkill[]>
           .map(async (f) => ({ path: f, content: await fs.readFile(f, "utf-8") })),
       )
       skill.files = companionContents.map((c) => c.content)
-      if (companionContents.length > 0) {
-        skill.content += "\n\n" + companionContents.map((c) => c.content).join("\n\n---\n\n")
-      }
+      skill.fileNames = companionContents.map((c) => path.basename(c.path))
 
       if (!seen.has(skill.name)) {
         skills.push(skill)

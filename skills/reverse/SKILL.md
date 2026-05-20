@@ -1,352 +1,167 @@
 ---
 name: reverse
-description: >
-  Reverse engineering specialist. Covers ELF/PE analysis, custom VM reversing,
-  anti-debug bypass, deobfuscation, symbolic execution, and Ghidra/Angr workflows.
+description: Provides reverse engineering techniques for CTF challenges. Use when the main job is to understand how a compiled, obfuscated, packed, or virtualized target works before exploiting or solving it, including binaries, APKs, WASM, firmware, custom VMs, bytecode, game clients, malware-like loaders, and anti-debug or anti-analysis logic. Do not use it when the vulnerability is already understood and the remaining task is exploitation; use pwn instead. Do not use it for pure web workflows, log or disk forensics, or standalone crypto problems unless reversing the implementation is the real blocker.
+license: MIT
+compatibility: Requires filesystem-based agent (Claude Code or similar) with bash, Python 3, and internet access for tool installation.
+allowed-tools: Bash Read Write Edit Glob Grep Task WebFetch WebSearch
 metadata:
-  user-invocable: "true"
-  argument-hint: "[binary-file]"
-  category: reverse
+  user-invocable: "false"
 ---
 
-# Reverse Engineering
+# CTF Reverse Engineering
 
-You are the reverse engineering specialist for CTF challenges. Disassemble, decompile, and analyze binaries to extract hidden logic and flags.
+Quick reference for RE challenges. For detailed techniques, see supporting files.
+
+## Prerequisites
+
+**Python packages (all platforms):**
+```bash
+pip install frida-tools angr qiling uncompyle6 capstone lief z3-solver
+# For Python 3.9+ bytecode: build pycdc from source
+git clone https://github.com/zrax/pycdc && cd pycdc && cmake . && make
+```
+
+**Linux (apt):**
+```bash
+apt install gdb radare2 binutils strace ltrace apktool upx
+```
+
+**macOS (Homebrew):**
+```bash
+brew install gdb radare2 binutils apktool upx ghidra
+```
+
+**radare2 plugins:**
+```bash
+r2pm -ci r2ghidra   # Native Ghidra decompiler for radare2
+```
+
+**Manual install:**
+- pwndbg — Linux: [GitHub](https://github.com/pwndbg/pwndbg), macOS: `brew install pwndbg/tap/pwndbg-gdb`
+
+## Additional Resources
+
+- [tools.md](tools.md) - Static analysis tools (GDB, Ghidra, radare2, IDA, Binary Ninja, dogbolt.org, RISC-V with Capstone, Unicorn emulation, Python bytecode, WASM, Android APK, .NET, packed binaries)
+- [tools-dynamic.md](tools-dynamic.md) - Dynamic analysis tools: Frida (hooking, anti-debug bypass, memory scanning, Android/iOS), angr symbolic execution (path exploration, constraints, CFG), lldb (macOS/LLVM debugger), x64dbg (Windows)
+- [tools-emulation.md](tools-emulation.md) - Emulation frameworks and side-channel tooling: Qiling (cross-platform OS-level emulation), Triton (DSE), Intel Pin instruction-counting + genetic algorithm side channel, opcode-only trace reconstruction, LD_PRELOAD time freeze and memcmp side-channel for byte-by-byte bruteforce
+- [tools-advanced.md](tools-advanced.md) - Advanced tools (Part 1): VMProtect/Themida analysis, binary diffing (BinDiff, Diaphora), deobfuscation frameworks (D-810, GOOMBA, Miasm), Qiling framework, Triton DSE, Manticore, Rizin/Cutter, RetDec, custom VM bytecode lifting to LLVM IR
+- [tools-advanced-2.md](tools-advanced-2.md) - Advanced tools (Part 2): advanced GDB (Python scripting, brute-force, conditional breakpoints, watchpoints, reverse debugging with rr, pwndbg/GEF), advanced Ghidra scripting, patching (Binary Ninja API, LIEF), GDB constraint extraction + ILP solver (BackdoorCTF 2017), GDB position-encoded input zero flag monitoring (EKOPARTY 2017), LD_PRELOAD execute-only binary dump (BackdoorCTF 2017), PEDA current_inst bit-by-bit flag scraper (CONFidence CTF 2019 Teaser)
+- [anti-analysis.md](anti-analysis.md) - Anti-analysis taxonomy: Linux anti-debug (ptrace, /proc, timing, signals, direct syscalls), Windows anti-debug (PEB, NtQueryInformationProcess, heap flags, TLS callbacks, HW/SW breakpoint detection, exception-based, thread hiding), anti-VM/sandbox (CPUID, MAC, timing, artifacts, resources), anti-DBI (Frida detection/bypass), code integrity/self-hashing, anti-disassembly (opaque predicates, junk bytes), MBA identification/simplification, comprehensive bypass strategies
+- [anti-analysis-ctf.md](anti-analysis-ctf.md) - CTF writeup techniques: SIGILL handler for execution mode switching (Hack.lu 2015), SIGFPE signal handler side-channel via strace counting (PlaidCTF 2017), instruction trace inversion with Keystone and Unicorn (MeePwn 2017), call-less function chaining via stack frame manipulation (THC 2018), parent-patched child binary dump via `process_vm_writev` (Google CTF Quals 2018)
+- [patterns.md](patterns.md) - Foundational binary patterns: custom VMs, anti-debugging, nanomites, self-modifying code, XOR ciphers, mixed-mode stagers, LLVM obfuscation, S-box/keystream, SECCOMP/BPF, exception handlers, memory dumps, byte-wise transforms, x86-64 gotchas, custom mangle reversing, position-based transforms, hex-encoded string comparison, signal-based binary exploration
+- [patterns-runtime.md](patterns-runtime.md) - Runtime patching and oracle techniques: malware anti-analysis bypass, multi-stage shellcode loaders, timing side-channel attacks, multi-thread anti-debug with decoy + signal handler MBA (ApoorvCTF 2026), INT3 patch + coredump brute-force oracle (Pwn2Win 2016), signal handler chain + LD_PRELOAD oracle (Nuit du Hack 2016), printf format string VM decompilation to Z3 (SECCON 2017), quadtree recursive image format parser (Google CTF Quals 2018)
+- [patterns-ctf.md](patterns-ctf.md) - Competition-specific patterns (Part 1): hidden emulator opcodes, LD_PRELOAD key extraction, SPN static extraction, image XOR smoothness, byte-at-a-time cipher, mathematical convergence bitmap, Windows PE XOR bitmap OCR, two-stage RC4+VM loaders, GBA ROM meet-in-the-middle, Sprague-Grundy game theory, kernel module maze solving, multi-threaded VM channels, backdoored shared library detection via string diffing, custom binfmt kernel module with RC4 flat binaries, hash-resolved imports / no-import ransomware, ELF section header corruption for anti-analysis
+- [patterns-ctf-2.md](patterns-ctf-2.md) - Competition-specific patterns (Part 2): multi-layer self-decrypting brute-force, embedded ZIP+XOR license, stack string deobfuscation, prefix hash brute-force, CVP/LLL lattice for integer validation, decision tree function obfuscation, GF(2^8) Gaussian elimination, ROP chain obfuscation analysis (ROPfuscation)
+- [patterns-ctf-3.md](patterns-ctf-3.md) - Competition-specific patterns (Part 3): Z3 single-line Python circuit, sliding window popcount, keyboard LED Morse code via ioctl, C++ destructor-hidden validation, syscall side-effect memory corruption, MFC dialog event handlers, VM sequential key-chain brute-force, Burrows-Wheeler transform inversion, OpenType font ligature exploitation, GLSL shader VM with self-modifying code, instruction counter as cryptographic state, batch crackme automation via objdump, fork+pipe+dead branch anti-analysis, TensorFlow DNN inversion via sigmoid layer inversion, BPF filter analysis via kernel JIT to x64 assembly
+- [languages.md](languages.md) - Language-specific: Python bytecode & opcode remapping, Python version-specific bytecode, Pyarmor static unpack, DOS stubs, Unity IL2CPP, HarmonyOS HAP/ABC, Brainfuck/esolangs (+ BF character-by-character static analysis, BF side-channel read count oracle, BF comparison idiom detection), UEFI, transpilation to C, code coverage side-channel, OPAL functional reversing, non-bijective substitution, FRACTRAN program inversion
+- [languages-platforms.md](languages-platforms.md) - Platform/framework-specific: Roblox place file analysis, Godot game asset extraction, Rust serde_json schema recovery, Android JNI RegisterNatives obfuscation, Android DEX runtime bytecode patching via /proc/self/maps, Android native .so loading bypass via new project, Frida Firebase Cloud Functions bypass, Verilog/hardware RE, prefix-by-prefix hash reversal, Ruby/Perl polyglot constraint satisfaction, Electron ASAR extraction + native binary analysis, Node.js npm runtime introspection
+- [languages-compiled.md](languages-compiled.md) - Go binary reversing (GoReSym, goroutines, memory layout, channel ops, embed.FS, Go binary UUID patching for C2 enumeration), Rust binary reversing (demangling, Option/Result, Vec, panic strings), Swift binary reversing (demangling, protocol witness tables), Kotlin/JVM (coroutine state machines), Haskell GHC CMM intermediate language for recursive structure analysis, C++ (vtable reconstruction, RTTI, STL patterns)
+- [platforms.md](platforms.md) - Platform-specific RE: macOS/iOS (Mach-O, code signing, Objective-C runtime, Swift, dyld, jailbreak bypass), embedded/IoT firmware (binwalk, UART/JTAG/SPI extraction, ARM/MIPS, RTOS), kernel drivers (Linux .ko, eBPF, Windows .sys), game engines (Unreal Engine, Unity, anti-cheat, Lua), automotive CAN bus
+- [platforms-hardware.md](platforms-hardware.md) - Hardware and advanced architecture RE: HD44780 LCD controller GPIO reconstruction, RISC-V advanced (custom extensions, privileged modes, debugging), ARM64/AArch64 reversing and exploitation (calling convention, ROP gadgets, qemu-aarch64-static emulation)
+- [field-notes.md](field-notes.md) - Quick reference notes: binary types, anti-debugging bypass, specialized patterns, CTF case notes
+
+---
+
+## When to Pivot
+
+- If you already understand the binary and now need heap, ROP, or kernel exploitation, switch to `/ctf-pwn`.
+- If the challenge is really about recovering deleted files, PCAP data, or disk artifacts, switch to `/ctf-forensics`.
+- If the target is a web app and you are only reversing a small client-side helper script, switch to `/ctf-web`.
+- If the binary implements a machine learning model and the challenge is about model attacks or adversarial inputs, switch to `/ctf-ai-ml`.
+- If the reversed binary's core logic is a cryptographic algorithm or math problem, switch to `/ctf-crypto`.
+- If the binary is a real malware sample with C2, packing, or evasion behavior, switch to `/ctf-malware`.
+- If the challenge is a toy VM, encoding puzzle, or pyjail rather than a real binary, switch to `/ctf-misc`.
+
+## Problem-Solving Workflow
+
+1. **Start with strings extraction** - many easy challenges have plaintext flags
+2. **Try ltrace/strace** - dynamic analysis often reveals flags without reversing
+3. **Try Frida hooking** - hook strcmp/memcmp to capture expected values without reversing
+4. **Try angr** - symbolic execution solves many flag-checkers automatically
+5. **Try Qiling** - emulate foreign-arch binaries or bypass heavy anti-debug without artifacts
+6. **Map control flow** before modifying execution
+7. **Automate manual processes** via scripting (r2pipe, Frida, angr, Python)
+8. **Validate assumptions** by comparing decompiler outputs (dogbolt.org for side-by-side)
+
+## Quick Wins (Try First!)
+
+```bash
+# Plaintext flag extraction
+strings binary | grep -E "flag\{|CTF\{|pico"
+strings binary | grep -iE "flag|secret|password"
+rabin2 -z binary | grep -i "flag"
+
+# Dynamic analysis - often captures flag directly
+ltrace ./binary
+strace -f -s 500 ./binary
+
+# Hex dump search
+xxd binary | grep -i flag
+
+# Run with test inputs
+./binary AAAA
+echo "test" | ./binary
+```
 
 ## Initial Analysis
 
 ```bash
-# File identification
-file ./binary
-file -b ./binary
-
-# Architecture details
-readelf -h ./binary      # ELF header
-objdump -f ./binary       # file headers
-
-# Strings extraction
-strings ./binary | less
-strings -a -el ./binary   # wide strings (UTF-16)
-strings -n 8 ./binary     # minimum length 8
-
-# Dynamic dependencies
-ldd ./binary
-readelf -d ./binary | grep NEEDED
-
-# Security features
-checksec --file=./binary
-
-# Quick disassembly
-objdump -d ./binary | less
-objdump -M intel -d ./binary | less  # Intel syntax
+file binary           # Type, architecture
+checksec --file=binary # Security features (for pwn)
+chmod +x binary       # Make executable
 ```
 
-## ELF Analysis
+## Memory Dumping Strategy
+
+**Key insight:** Let the program compute the answer, then dump it. Break at final comparison (`b *main+OFFSET`), enter any input of correct length, then `x/s $rsi` to dump computed flag.
+
+## Decoy Flag Detection
+
+**Pattern:** Multiple fake targets before real check. Look for multiple comparison targets in sequence with different success messages. Set breakpoint at FINAL comparison, not earlier ones.
+
+## GDB PIE Debugging
+
+PIE binaries randomize base address. Use relative breakpoints:
+```bash
+gdb ./binary
+start                    # Forces PIE base resolution
+b *main+0xca            # Relative to main
+run
+```
+
+## Comparison Direction (Critical!)
+
+Two patterns: (1) `transform(flag) == stored_target` — reverse the transform. (2) `transform(stored_target) == flag` — flag IS the transformed data, just apply transform to stored target.
+
+## Common Encryption Patterns
+
+- XOR with single byte - try all 256 values
+- XOR with known plaintext (`flag{`, `CTF{`)
+- RC4 with hardcoded key
+- Custom permutation + XOR
+- XOR with position index (`^ i` or `^ (i & 0xff)`) layered with a repeating key
+
+## Quick Tool Reference
 
 ```bash
-# Section analysis
-readelf -S ./binary
-size ./binary
+# Radare2
+r2 -d ./binary     # Debug mode
+aaa                # Analyze
+afl                # List functions
+pdf @ main         # Disassemble main
 
-# Symbol table
-readelf -s ./binary
-nm ./binary             # dynamic symbols
+# Ghidra (headless)
+analyzeHeadless project/ tmp -import binary -postScript script.py
 
-# Relocation entries
-readelf -r ./binary
-
-# Find specific functions
-objdump -d ./binary | grep -A 20 '<main>'
-
-# Cross references
-objdump -d ./binary | grep 'call.*puts'  # find calls to puts
+# IDA
+ida64 binary       # Open in IDA64
 ```
 
-## PE Analysis (Windows Binaries)
+## Deep-Dive Notes
 
-```bash
-# If Windows binary on Linux
-file ./challenge.exe
-strings ./challenge.exe | grep -i "flag\|key\|password"
+Use [field-notes.md](field-notes.md) after the first round of triage when you know what kind of target you have.
 
-# With radare2
-r2 -AA ./challenge.exe
-[0x00401000]> afl          # list functions
-[0x00401000]> pdf @main     # disassemble main
-
-# .NET binaries
-monodis ./challenge.exe     # disassemble .NET
-ilspy ./challenge.exe       # decompile .NET
-
-# Extract resources
-# Use wine + Resource Hacker, or binwalk
-```
-
-## Radare2 Workflow
-
-```bash
-# Open and analyze
-r2 -AA ./binary
-
-# Navigation
-afl                          # list all functions
-s main                       # seek to main
-pdf                          # print disassembly function
-VV                           # visual mode (graph)
-
-# Analysis
-axt @ sym.func               # cross-references to function
-agd                          # graph disassembly
-iz                           # strings in data
-izz                          # all strings
-ie                           # entry points
-
-# Renaming (helps readability)
-afn main @ 0x08048456        # rename function
-CCa 0x08048456 "check flag"  # add comment
-
-# Scripting
-r2 -AA -c "pdf @main" ./binary > main_disasm.txt
-```
-
-## Ghidra Headless
-
-```bash
-# Create project and analyze
-analyzeHeadless /tmp/ghidra_proj ctf \
-  -import ./binary \
-  -postScript /dev/stdin << 'EOF'
-from ghidra.program.model.symbol import SymbolType
-
-listing = currentProgram.getListing()
-fm = currentProgram.getFunctionManager()
-
-for func in fm.getFunctions(True):
-    print("Function: {} at {}".format(func.getName(), func.getEntryPoint()))
-
-# Decompile specific function
-from ghidra.app.decompiler import DecompInterface
-decomp = DecompInterface()
-decomp.openProgram(currentProgram)
-func = fm.getFunctionContaining(addr)
-result = decomp.decompileFunction(func, 60, monitor)
-print(result.getDecompiledFunction().getC())
-EOF
-```
-
-## Custom VM Reversing
-
-### Identification
-```bash
-# Signs of a custom VM:
-# - Large switch/case or jump table
-# - Dispatch loop with opcode fetch
-# - Memory region used as "stack" or "heap"
-# - Array of function pointers
-# - Bytecode data embedded in binary
-```
-
-### Approach
-1. **Find the dispatch loop**: Look for `while(1)` / `for(;;` with switch on byte value
-2. **Map opcodes**: Each case is an instruction handler
-3. **Identify registers**: VM usually has virtual registers (array indexing)
-4. **Trace bytecode**: Extract bytecode data and disassemble manually
-5. **Common patterns**:
-   - `opcodes[pc]` → fetch instruction
-   - `opcodes[pc+1]` → operand
-   - `registers[reg]` → virtual register access
-
-### Python VM Disassembler Template
-```python
-#!/usr/bin/env python3
-import struct
-
-bytecode = open('./binary', 'rb').read()
-# Find bytecode start offset (from reverse engineering)
-START = 0x2000
-
-pc = START
-while pc < len(bytecode):
-    op = bytecode[pc]
-    if op == 0x00:   # HALT
-        print(f"{pc:04x}: HALT")
-        break
-    elif op == 0x01: # MOV reg, imm
-        reg = bytecode[pc+1]
-        imm = struct.unpack('<I', bytecode[pc+2:pc+6])[0]
-        print(f"{pc:04x}: MOV r{reg}, {imm:#x}")
-        pc += 6
-    elif op == 0x02: # ADD reg1, reg2
-        r1, r2 = bytecode[pc+1], bytecode[pc+2]
-        print(f"{pc:04x}: ADD r{r1}, r{r2}")
-        pc += 3
-    elif op == 0x03: # CMP reg, imm
-        reg = bytecode[pc+1]
-        imm = struct.unpack('<I', bytecode[pc+2:pc+6])[0]
-        print(f"{pc:04x}: CMP r{reg}, {imm:#x}")
-        pc += 6
-    # ... map all opcodes
-    else:
-        print(f"{pc:04x}: UNKNOWN opcode {op:#x}")
-        pc += 1
-```
-
-## Anti-Debug Bypass
-
-### Common Techniques
-```bash
-# ptrace-based anti-debug
-# Binary calls ptrace(PTRACE_TRACEME) and exits if debugged
-
-# GDB: catch and skip
-catch syscall ptrace
-# Or patch: replace call with NOPs
-
-# Timing checks
-# Binary measures time, exits if too slow (debugger adds delay)
-# GDB: set *0xADDRESS = 0x90909090  # NOP out check
-```
-
-### GDB Bypass Scripts
-```gdb
-# Bypass ptrace check
-set {int}0x08048567 = 0
-
-# Patch conditional jump (je → jmp or je → jne)
-set {char}0x08048590 = 0x74  # je
-set {char}0x08048590 = 0x75  # jne
-set {char}0x08048590 = 0xeb  # unconditional jmp
-
-# Skip anti-debug function
-b anti_debug_function
-commands
-  return
-  continue
-end
-```
-
-### LD_PRELOAD Bypass
-```c
-// fake_ptrace.c
-long ptrace(int req, ...) { return 0; }
-// gcc -shared -fPIC -o fake_ptrace.so fake_ptrace.c
-// LD_PRELOAD=./fake_ptrace.so ./binary
-```
-
-## String Obfuscation
-
-### XOR Decoding
-```python
-# Common: each byte XOR'd with key
-encrypted = bytes.fromhex("1a2b3c4d5e")
-key = 0x42
-decrypted = bytes([b ^ key for b in encrypted])
-print(decrypted)
-
-# Rolling XOR
-encrypted = bytes.fromhex("...")
-key = b"KEY"
-decrypted = bytes([encrypted[i] ^ key[i % len(key)] for i in range(len(encrypted))])
-```
-
-### Base64 in Binary
-```bash
-# Extract and decode
-strings ./binary | grep -E '^[A-Za-z0-9+/]+=*$' | while read line; do
-    echo "$line" | base64 -d 2>/dev/null && echo
-done
-```
-
-## Control Flow Flattening (OLLVM)
-
-### Identification
-- Single large dispatch loop with switch
-- State variable controls execution order
-- Basic blocks scattered, not sequential
-
-### Approach
-1. Map all state values to their target blocks
-2. Trace state transitions (build CFG manually)
-3. Recover original control flow from transitions
-4. Use angr or Unicorn to symbolically execute
-
-## Angr (Symbolic Execution)
-
-```python
-import angr
-
-proj = angr.Project('./binary', auto_load_libs=False)
-
-# Find path to "correct" / avoid "wrong"
-state = proj.factory.entry_state()
-
-simgr = proj.factory.simgr(state)
-simgr.explore(
-    find=lambda s: b"Correct" in s.posix.dumps(1),
-    avoid=lambda s: b"Wrong" in s.posix.dumps(1)
-)
-
-if simgr.found:
-    solution = simgr.found[0]
-    flag = solution.posix.dumps(0)  # stdin
-    print(f"Flag: {flag.decode()}")
-```
-
-### Constrained Execution
-```python
-# If you know part of the input format
-state = proj.factory.entry_state()
-flag_chars = []
-for i in range(32):
-    c = state.solver.BVS(f'flag_{i}', 8)
-    flag_chars.append(c)
-    state.add_constraints(c >= 0x20, c <= 0x7e)  # printable
-
-flag = state.solver.Concat(*flag_chars)
-# Add to stdin or memory as needed
-```
-
-## Z3 Constraint Solver
-
-```python
-from z3 import *
-
-s = Solver()
-flag = [BitVec(f'f{i}', 8) for i in range(32)]
-
-# Add constraints from reversed logic
-s.add(flag[0] * flag[1] == 0x1234)
-s.add(flag[0] + flag[1] == 0xab)
-# ... add all constraints
-
-if s.check() == sat:
-    m = s.model()
-    result = ''.join(chr(m[f].as_long()) for f in flag)
-    print(f"Flag: {result}")
-```
-
-## Common Patterns
-
-| Pattern | Indicator | Approach |
-|---------|-----------|----------|
-| XOR cipher | Repeated byte ops | Find key, decrypt |
-| Custom VM | Large switch, fetch-decode loop | Map opcodes, disassemble |
-| Anti-debug | ptrace, timing, int3 | Patch or LD_PRELOAD |
-| OLLVM flattening | State variable dispatch | Trace states, reconstruct |
-| TEA/XTEA | Magic constants 0x9e3779b9 | Implement inverse |
-| RC4 | KSA + PRGA structure | Extract key, decrypt |
-| AES | S-box substitution | Find key/IV, decrypt |
-
-## Quick Reference
-
-| Task | Command |
-|------|---------|
-| File info | `file ./binary` |
-| Strings | `strings -a ./binary \| grep flag` |
-| Disassemble | `objdump -M intel -d ./binary` |
-| Symbols | `nm ./binary` |
-| Radare2 | `r2 -AA ./binary` then `pdf @main` |
-| Ghidra | `analyzeHeadless` or GUI |
-| Trace syscalls | `strace ./binary` |
-| Trace library | `ltrace ./binary` |
-| Hex dump | `xxd ./binary \| less` |
+- Target formats: Python bytecode, WASM, Android, Flutter, .NET, UPX, Tauri
+- Technique notes: anti-debug bypass, VM analysis, x86-64 gotchas, iterative solvers, Unicorn, timing side channels
+- Platform notes: Godot, Roblox, macOS/iOS, embedded firmware, kernel drivers, game engines, Swift, Kotlin, Go, Rust, D
+- Case notes: modern CTF-specific reversing patterns and older classic challenge patterns

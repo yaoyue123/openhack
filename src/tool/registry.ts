@@ -7,6 +7,7 @@ import { GlobTool } from "./glob.js";
 import { GrepTool } from "./grep.js";
 import { WebFetchTool } from "./webfetch.js";
 import { FlagTool } from "./flag.js";
+import { PythonTool } from "./python.js";
 
 export class ToolRegistry {
   private tools: Map<string, ToolDef> = new Map();
@@ -22,6 +23,7 @@ export class ToolRegistry {
       GrepTool,
       WebFetchTool,
       FlagTool,
+      PythonTool,
     ];
     for (const tool of builtins) reg.register(tool);
     return reg;
