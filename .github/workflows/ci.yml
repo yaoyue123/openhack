@@ -44,3 +44,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  bilingual-check:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check bilingual README sync
+        run: |
+          EN=$(grep -c "^## " README.md)
+          ZH=$(grep -c "^## " README.zh-CN.md)
+          if [ "$EN" -ne "$ZH" ]; then
+            echo "README section count mismatch: EN=$EN ZH=$ZH"
+            exit 1
+          fi
+          echo "README sections in sync: EN=$EN ZH=$ZH"

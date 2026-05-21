@@ -1,0 +1,14 @@
+Challenge: Russian Dolls
+Category: Crypto
+Difficulty: Easy
+Points: 100
+
+We intercepted this strange message from a rival team's comms channel.
+It looks like they wrapped their secret in layer after layer of encoding,
+like some kind of digital Russian doll. Peel back the layers and find
+what's hidden inside.
+
+The flag format is flag{...}.
+
+Encoded message:
+V20xNGFGb3pkR2xPU0U1c1RtcFNabUZZVG1aaWFrSXdXREpXZFZrelNqVmpSR1J3WWpJMU9Rbz0K

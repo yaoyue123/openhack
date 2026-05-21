@@ -1,8 +1,8 @@
 {
-  "name": "@yaoyue123/opensec",
+  "name": "openhack",
   "version": "0.0.1",
   "type": "module",
-  "description": "CTF competition AI agent with Skill + MCP architecture",
+  "description": "AI-powered CTF agent with persistent memory, safety harness, and multi-agent architecture",
   "bin": {
     "openhack": "dist/index.js"
   },
@@ -22,7 +22,13 @@
   "keywords": [
     "ctf",
     "security",
-    "ai-agent"
+    "ai-agent",
+    "llm",
+    "capture-the-flag",
+    "penetration-testing",
+    "hacking",
+    "cli",
+    "typescript"
   ],
   "license": "MIT",
   "repository": {
@@ -30,6 +36,15 @@
     "url": "git+https://github.com/yaoyue123/openhack.git"
   },
   "homepage": "https://github.com/yaoyue123/openhack#readme",
+  "bugs": {
+    "url": "https://github.com/yaoyue123/openhack/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@modelcontextprotocol/sdk": "^1.29.0",
