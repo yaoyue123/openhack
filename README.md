@@ -1,28 +1,56 @@
-# openhack
+<!-- For full documentation, visit https://github.com/yaoyue123/openhack -->
+
+# OpenHack
 
 English | [中文](./README.zh-CN.md)
 
-AI-powered CTF agent with a Harness control layer, persistent memory, and skill-based architecture.
-
+[![npm version](https://img.shields.io/npm/v/openhack.svg)](https://www.npmjs.com/package/openhack)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org/)
-[![npm version](https://img.shields.io/badge/npm-0.0.1-blue.svg)](https://www.npmjs.com/package/@yaoyue123/opensec)
 
-## Overview
+AI agent that solves CTF challenges. Harness-controlled, memory-persistent, skill-aware.
 
-openhack is an AI agent that solves CTF (Capture The Flag) security challenges. It combines an LLM-driven agent loop with a code-level Harness that enforces safety boundaries, persistent memory files that survive across sessions, and a skill system for category-specific expertise.
+> **Requires an LLM backend.** Works with Ollama, OpenAI, or any OpenAI-compatible API.
 
-The agent follows a structured methodology across five phases: recon, exploit, lateral, escalate, and done. It supports multi-step tool calling with built-in guards against infinite loops, context overflow, and runaway execution.
+<!-- TODO: Add demo GIF here — a terminal recording showing `openhack solve ./challenge` auto-triaging a crypto challenge, running tools, and finding the flag. -->
+
+## Quick Start
+
+```bash
+npm install -g openhack
+openhack init          # defaults to http://localhost:11434/v1 (Ollama)
+openhack solve ./challenge
+```
+
+That's it. With Ollama running locally, no extra config is needed.
+
+## Features
+
+- 🎯 **Specialized agents** — seven categories: triage, crypto, pwn, web, reverse, forensics, misc. Auto-routed or manually selected.
+- 🛡️ **Harness safety layer** — LoopGuard catches repeated tool calls, BudgetGuard compresses context before overflow, Terminator stops on flag detection or stalled progress.
+- 🧠 **Persistent memory** — state, findings, failed paths, and attack logs survive across sessions. Pause and resume without losing context.
+- 🔧 **13 built-in tools** — shell, read, write, edit, glob, grep, webfetch, flag, python, plus memory and state management.
+- 📋 **Skill system** — category-specific SKILL.md reference files that inject domain expertise into agent prompts.
+- 🔌 **MCP integration** — Model Context Protocol servers for forensics, pwn, web, and reverse engineering.
 
 ## Architecture
 
-openhack uses a three-layer architecture:
+```mermaid
+flowchart TB
+    subgraph Harness ["Harness (code boundary)"]
+        LG[LoopGuard<br/>hash similarity]
+        BG[BudgetGuard<br/>token tracking]
+        TM[Terminator<br/>flag/stall detection]
+    end
+    subgraph AL ["Agent Loop (LLM-driven)"]
+        LLM[LLM] <--> TOOLS[Tools]
+        LLM <--> MEM[Memory Files]
+    end
+    Harness -- "observe + inject hints" --> AL
+```
 
-**Harness** is the code boundary. It doesn't tell the agent what to think, it just keeps things from breaking. Loop detection catches repeated tool calls, budget tracking compresses context before it overflows, and the terminator stops execution when the flag is found or progress stalls.
-
-**Memory** is the persistence layer. State, findings, failed paths, and attack logs live in markdown files the agent reads and writes through dedicated tools. Sessions can be paused and resumed without losing context.
-
-**Agent Loop** is the LLM-driven core. It runs tool calls iteratively with an `onStepFinish` callback that lets the Harness run per-step guard checks between iterations.
+<details>
+<summary>ASCII diagram (for npm / terminal viewers)</summary>
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -39,43 +67,66 @@ openhack uses a three-layer architecture:
 │  └────────────────────────────────────────┘   │
 └──────────────────────────────────────────────┘
 ```
+</details>
 
-## Features
+## CLI Reference
 
-- Multi-step tool calling with iterative agent loop
-- FSM phase routing: recon, exploit, lateral, escalate, done
-- Context compression when token budget runs low
-- Loop detection via hash-based similarity matching
-- Persistent memory across sessions (state, findings, failed paths, attack log)
-- Skill system with companion reference files per category
-- MCP (Model Context Protocol) server integration
-- Docker support for isolated challenge execution
-- Permission system with allow/deny/ask rules per tool
-- Session management with pause and resume
-- Auto flag detection with `flag` tool
-- OpenAI-compatible API backend (works with Ollama, LM Studio, etc.)
+| Command | Description |
+|---|---|
+| `openhack init` | Interactive config wizard |
+| `openhack chat <message>` | Send a message to the agent |
+| `openhack solve [path]` | Auto-triage and solve a challenge |
+| `openhack sessions` | List saved sessions |
+| `openhack resume <id>` | Resume a paused session |
+| `openhack skills list` | Show loaded skills |
+| `openhack config get <key>` | Read a config value |
+| `openhack config set <key> <value>` | Write a config value |
+| `openhack config list` | Print full config |
+| `openhack config validate` | Check for config issues |
 
-## Quick Start
+<details>
+<summary>Solve command flags</summary>
 
 ```bash
-# Install
-npm install -g @yaoyue123/opensec
-
-# Initialize configuration
-openhack init
-
-# Solve a challenge
-openhack solve ./my-challenge
-
-# Or send a quick message
-openhack chat "How do I decode a base64 string?"
+openhack solve ./challenge --category crypto    # skip triage, use crypto agent
+openhack solve ./challenge --agent pwn          # use specific agent
+openhack solve ./challenge --model gpt-4        # override model
 ```
+</details>
 
-The `init` wizard will ask for your API base URL, key, and default model. It defaults to `http://localhost:11434/v1` for local Ollama instances.
+## Comparison
 
-## Configuration
+| | **OpenHack** | ctf-agent | PentestGPT |
+|---|---|---|---|
+| Agent specialization (7 categories) | ✓ | ✗ | ✗ |
+| Persistent memory across sessions | ✓ | ✗ | ✗ |
+| Harness safety (loop/budget/termination) | ✓ | ✗ | partial |
+| LLM backend freedom (Ollama, OpenAI, etc.) | ✓ | ✓ | partial |
+| MCP tool integration | ✓ | ✗ | ✗ |
+| Fully self-hosted | ✓ | ✓ | ✗ |
 
-Config lives at `~/.config/openhack/openhack.jsonc` (JSON with comments supported).
+## Built-in Tools
+
+| Tool | What it does |
+|---|---|
+| `bash` | Run shell commands |
+| `read` | Read file contents |
+| `write` | Create or overwrite files |
+| `edit` | Targeted string replacements |
+| `glob` | Find files by pattern |
+| `grep` | Search file contents (regex) |
+| `webfetch` | Fetch content from a URL |
+| `flag` | Submit a discovered flag |
+| `python` | Execute Python code |
+| `state-read` | Read current state.md |
+| `state-write` | Update state.md |
+| `memory-query` | Read from memory files |
+| `memory-write` | Write to memory files |
+
+<details>
+<summary>Configuration reference</summary>
+
+Config lives at `~/.config/openhack/openhack.jsonc` (JSON with comments):
 
 ```jsonc
 {
@@ -85,14 +136,14 @@ Config lives at `~/.config/openhack/openhack.jsonc` (JSON with comments supporte
     "apiKey": ""
   },
   "agent": {
-    "maxSteps": 25,      // max tool-call iterations
-    "timeout": 300       // seconds
+    "maxSteps": 25,
+    "timeout": 300
   },
   "harness": {
     "loop": {
-      "windowSize": 5,             // steps to compare
-      "similarityThreshold": 0.8,  // 0-1 hash match ratio
-      "maxRepeats": 3              // consecutive matches before halt
+      "windowSize": 5,
+      "similarityThreshold": 0.8,
+      "maxRepeats": 3
     },
     "budget": {
       "maxTokens": 100000,
@@ -110,9 +161,9 @@ Config lives at `~/.config/openhack/openhack.jsonc` (JSON with comments supporte
   "docker": {
     "enabled": true,
     "preferContainer": true,
-    "image": null       // uses default
+    "image": null
   },
-  "mcpServers": {},     // add MCP servers here
+  "mcpServers": {},
   "permissions": {
     "default": ["ask"],
     "rules": [
@@ -123,103 +174,47 @@ Config lives at `~/.config/openhack/openhack.jsonc` (JSON with comments supporte
 }
 ```
 
-Manage config from the CLI:
+Manage from CLI: `openhack config list`, `openhack config get llm.model`, `openhack config set agent.maxSteps 50`
+</details>
 
-```bash
-openhack config list            # print full config
-openhack config get llm.model   # get a value
-openhack config set agent.maxSteps 50  # set a value
-openhack config validate        # check for issues
-```
+<details>
+<summary>Troubleshooting</summary>
 
-## CLI Commands
-
-| Command | Description |
+| Problem | Fix |
 |---|---|
-| `openhack init` | Interactive configuration wizard |
-| `openhack chat <message>` | Send a message to the agent |
-| `openhack solve [path]` | Auto-triage and solve a CTF challenge |
-| `openhack sessions` | List all sessions |
-| `openhack resume <id>` | Resume a paused session |
-| `openhack skills list` | List loaded skills |
-| `openhack config get <key>` | Get a config value |
-| `openhack config set <key> <value>` | Set a config value |
-| `openhack config list` | Print full configuration |
-| `openhack config validate` | Validate configuration |
+| `Ollama not found` / connection refused | Start Ollama: `ollama serve`. Verify it's running at `http://localhost:11434`. |
+| API key missing error | Run `openhack init` or set `OPENHACK_LLM_API_KEY` env var. |
+| Token budget exceeded | Increase `harness.budget.maxTokens` or lower `compressThreshold` in config. |
+| Agent loops on the same approach | Lower `harness.loop.similarityThreshold` or `maxRepeats` for earlier loop detection. |
+| Config file not found | Run `openhack init` to create it, or check `~/.config/openhack/openhack.jsonc`. |
+</details>
 
-The `solve` command accepts flags for routing:
+<details>
+<summary>Advanced: Tuning the Harness</summary>
 
-```bash
-openhack solve ./challenge --category crypto
-openhack solve ./challenge --agent pwn --model gpt-4
-```
+The Harness is three independent guards that observe the agent loop via `onStepFinish` callbacks. They never modify prompts directly.
 
-## Tools
+**LoopGuard** hashes each step's tool calls and arguments using Jaccard similarity on token sets. When the last N steps exceed the similarity threshold for more than `maxRepeats` consecutive steps, it injects a system message telling the agent to switch approaches.
 
-The agent has 13 built-in tools available during execution:
+**BudgetGuard** estimates token usage (character length / 4) and triggers context compression when it crosses the threshold. Compression summarizes older steps while preserving the most recent ones intact.
 
-| Tool | Purpose |
-|---|---|
-| `bash` | Run shell commands |
-| `read` | Read file contents |
-| `write` | Create or overwrite files |
-| `edit` | Apply targeted string replacements to files |
-| `glob` | Find files by pattern |
-| `grep` | Search file contents with regex |
-| `webfetch` | Fetch content from a URL |
-| `flag` | Submit a discovered flag |
-| `python` | Execute Python code |
-| `state-read` | Read the current `state.md` |
-| `state-write` | Update `state.md` (phase, objective, findings) |
-| `memory-query` | Read from memory files (findings, failed-paths, attack-log) |
-| `memory-write` | Write to memory files |
+**Terminator** watches for flag patterns (`flag{}`, `HTB{}`, `CTF{}`, `picoCTF{}`) in raw message text and monitors `state.md` phase transitions. If the agent goes N steps without a meaningful state change, it terminates the loop.
 
-## Architecture Details
-
-### Harness Guards
-
-**LoopGuard** hashes each step's tool calls and arguments, then compares the last N steps for similarity. If the similarity score exceeds the threshold for more than `maxRepeats` consecutive steps, it injects a prompt telling the agent to switch approaches.
-
-**BudgetGuard** tracks cumulative token usage. When it crosses the compression threshold, it triggers context compression that summarizes older steps while preserving the most recent ones.
-
-**Terminator** watches for flag detection (via the `flag` tool) and progress stalls. If the agent goes N steps without meaningful state changes, it terminates the loop.
-
-### Memory System
-
-Memory files live in the challenge's `.openhack/` directory:
-
-- `state.md` tracks current phase, objective, and working findings. The agent updates it after every significant action.
-- `memory/findings.md` stores discovered ports, vulnerabilities, credentials, and other intel.
-- `memory/failed-paths.md` records approaches that didn't work, preventing the agent from repeating them.
-- `memory/attack-log.md` is the auto-generated chronological log of all actions taken.
-
-The **Compressor** extracts key information from older conversation steps and replaces them with a summary, keeping the token budget under control while preserving critical context.
+Override any guard's defaults in config under the `harness` key, or disable memory entirely with `memory.enabled: false`.
+</details>
 
 ## Development
 
 ```bash
-# Run in development mode
-npm run dev
-
-# Build for production
-npm run build
-
-# Run tests
-npm test
-
-# Type check
-npm run typecheck
+npm run dev        # run with tsx (no build)
+npm run build      # tsup → dist/
+npm test           # vitest run
+npm run typecheck  # tsc --noEmit
 ```
 
-### Tech Stack
+## Contributing
 
-- TypeScript with ESM modules
-- Vercel AI SDK for LLM interaction
-- Effect (partial) for runtime services
-- yargs for CLI
-- Zod for config validation
-- vitest for testing
-- tsup for builds
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 ## License
 
