@@ -6,7 +6,7 @@ AI 驱动的 CTF 智能体，具备 Harness 控制层、持久化记忆和技能
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org/)
-[![npm version](https://img.shields.io/badge/npm-0.0.1-blue.svg)](https://www.npmjs.com/package/openhack)
+[![npm version](https://img.shields.io/badge/npm-0.0.1-blue.svg)](https://www.npmjs.com/package/@yaoyue123/opensec)
 
 ## 概述
 
@@ -59,7 +59,7 @@ openhack 采用三层架构：
 
 ```bash
 # 安装
-npm install -g openhack
+npm install -g @yaoyue123/opensec
 
 # 初始化配置
 openhack init

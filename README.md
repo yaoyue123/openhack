@@ -6,7 +6,7 @@ AI-powered CTF agent with a Harness control layer, persistent memory, and skill-
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org/)
-[![npm version](https://img.shields.io/badge/npm-0.0.1-blue.svg)](https://www.npmjs.com/package/openhack)
+[![npm version](https://img.shields.io/badge/npm-0.0.1-blue.svg)](https://www.npmjs.com/package/@yaoyue123/opensec)
 
 ## Overview
 
@@ -59,7 +59,7 @@ openhack uses a three-layer architecture:
 
 ```bash
 # Install
-npm install -g openhack
+npm install -g @yaoyue123/opensec
 
 # Initialize configuration
 openhack init
