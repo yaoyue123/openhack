@@ -2,5 +2,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env
+.env.*
 openhack.jsonc
 .npmrc
+.omo/
+.openhack/
+benchmark/

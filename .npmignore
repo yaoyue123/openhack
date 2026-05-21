@@ -8,5 +8,6 @@ tsconfig.json
 tsup.config.ts
 vitest.config.*
 .omo/
-.openh
-ack/
+.openhack/
+AGENTS.md
+**/AGENTS.md
