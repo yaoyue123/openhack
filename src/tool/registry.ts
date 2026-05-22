@@ -12,6 +12,8 @@ import { StateReadTool } from "./state-read.js";
 import { StateWriteTool } from "./state-write.js";
 import { MemoryQueryTool } from "./memory-query.js";
 import { MemoryWriteTool } from "./memory-write.js";
+import { DelegateTool } from "./delegate.js";
+import { ReflectTool } from "./reflect.js";
 
 export class ToolRegistry {
   private tools: Map<string, ToolDef> = new Map();
@@ -32,6 +34,8 @@ export class ToolRegistry {
       StateWriteTool,
       MemoryQueryTool,
       MemoryWriteTool,
+      DelegateTool,
+      ReflectTool,
     ];
     for (const tool of builtins) reg.register(tool);
     return reg;
