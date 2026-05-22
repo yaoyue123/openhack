@@ -8,3 +8,4 @@ openhack.jsonc
 .omo/
 .openhack/
 benchmark/
+.gstack/
