@@ -2,17 +2,23 @@
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { Effect } from "effect";
+import * as os from "node:os";
+import * as path from "node:path";
 import { createAppRuntime, ConfigService } from "./runtime/app.js";
 import { createProvider } from "./llm/provider.js";
 import { runAgentLoop } from "./agent-loop.js";
 import { ToolRegistry } from "./tool/registry.js";
 import type { OpenhackConfig } from "./config/schema.js";
 import type { ToolContext } from "./tool/types.js";
-import { getAgent, getDefaultAgent } from "./agent/router.js";
+import { getAgent, getDefaultAgent, registry } from "./agent/router.js";
+import { AgentRegistry } from "./agent/registry.js";
+import { runAgent, type AgentRunContext } from "./agent/runtime.js";
+import type { DelegateRequest } from "./agent/types.js";
 import { getSystemPrompt } from "./llm/system-prompt.js";
 import { SessionStore } from "./session/store.js";
 import { SkillRegistry } from "./skill/registry.js";
 import { ConfigLoader, stripJsoncComments } from "./config/loader.js";
+import { MCPLifecycle } from "./mcp/lifecycle.js";
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce((o: unknown, k: string) => {
@@ -148,14 +154,17 @@ const cli = yargs(hideBin(process.argv))
       const paths = (args.path as string[]) ?? [];
       const workDir = paths[0] ?? process.cwd();
 
+      const agentRegistry = await AgentRegistry.createWithUserAgents(workDir);
+
       const agentName = (args.agent as string | undefined) ?? args.category ?? undefined;
-      const agent = agentName ? getAgent(agentName) : getDefaultAgent();
+      const agent = agentName ? agentRegistry.get(agentName) : agentRegistry.getDefault();
       if (!agent) {
         console.error(`Unknown agent: ${agentName}`);
         process.exit(1);
       }
 
       const runtime = createAppRuntime(workDir);
+      const mcpLifecycle = new MCPLifecycle();
       try {
         const config = await runtime.runPromise(
           Effect.flatMap(ConfigService, (svc) => svc.get()),
@@ -167,17 +176,13 @@ const cli = yargs(hideBin(process.argv))
           : config.llm;
 
         const provider = createProvider(llmConfig);
-        const registry = ToolRegistry.createBuiltin();
+        const registry_tools = ToolRegistry.createBuiltin();
         const skillRegistry = await SkillRegistry.create(process.cwd());
-        const toolContext: ToolContext = {
-          workingDir: workDir,
-          sessionId: "solve",
-          permissionCheck: async () => true,
-        };
 
         const pathContext =
           paths.length > 0 ? `\n\nWorking directory: ${paths.join(", ")}` : "";
 
+        let challengeInfo: Partial<{ name: string; category: string; description: string; files: string[] }> = {};
         let challengeContext = pathContext;
         try {
           const fs = await import("node:fs/promises");
@@ -186,43 +191,120 @@ const cli = yargs(hideBin(process.argv))
           const raw = await fs.readFile(jsonPath, "utf-8");
           const chal = JSON.parse(raw);
           const { flag: _, ...safe } = chal;
+          challengeInfo = { name: safe.name, category: safe.category, description: safe.description, files: safe.files };
           challengeContext = `\n\nChallenge: ${safe.name || "Unknown"}\nCategory: ${safe.category || "unknown"}\nDescription: ${safe.description || "No description"}\nFiles: ${(safe.files || []).join(", ")}\nDirectory: ${paths.join(", ")}`;
         } catch {
           challengeContext = pathContext;
         }
 
+        const session = await SessionStore.create({
+          name: challengeInfo.name,
+          category: challengeInfo.category ?? agent.name,
+          description: challengeInfo.description,
+          files: challengeInfo.files ?? paths,
+        });
+        session.state = "running";
+        session.agentHistory.push(agent.name);
+        await SessionStore.save(session);
+
+        const toolContext: ToolContext = {
+          workingDir: workDir,
+          sessionId: session.id,
+          permissionCheck: async () => true,
+        };
+
         const userMessage = `Solve this CTF challenge using the ${agent.name} agent.${challengeContext}\n\nIMPORTANT: Do NOT read challenge.json for the answer. Analyze the actual challenge files to find the flag.`;
 
-        const skillContent = skillRegistry.toPromptWithCompanions(agent.name);
+        const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
+
+        const collectFlagsAndSave = async (flags: string[]) => {
+          for (const f of flags) {
+            if (!session.flags.includes(f)) {
+              session.flags.push(f);
+              session.timeline.push({ type: "FLAG_FOUND", flag: f, source: "agent" });
+            }
+          }
+          await SessionStore.save(session);
+        };
 
         try {
-          await runAgentLoop({
-            provider,
-            messages: [
-              {
-                role: "user",
-                content: userMessage,
+          const delegateHandler = async (req: DelegateRequest) => {
+            const specialistDef = agentRegistry.get(req.targetAgent);
+            if (!specialistDef) {
+              process.stdout.write(`\n[Unknown specialist: ${req.targetAgent}]\n`);
+              return { messages: [], flags: [], iterations: 0, terminationReason: "unknown_agent" };
+            }
+
+            process.stdout.write(`\n[Delegating to ${req.targetAgent} specialist...]\n`);
+            session.timeline.push({ type: "AGENT_SWITCH", from: agent.name, to: req.targetAgent, reason: req.objective });
+            session.agentHistory.push(req.targetAgent);
+            await SessionStore.save(session);
+
+            const specialistCtx: AgentRunContext = {
+              agentDef: specialistDef,
+              provider,
+              tools: registry_tools,
+              toolContext,
+              config,
+              skillRegistry,
+              memoryDir,
+              mcpLifecycle,
+              initialObjective: `${req.objective}\n\n## Triage Context\n${req.context}`,
+              onToken: (token) => process.stdout.write(token),
+              onToolCall: (tool, a) => {
+                process.stdout.write(`\n[${req.targetAgent} | tool: ${tool}]\n`);
+                session.timeline.push({ type: "TOOL_EXEC", tool, args: JSON.stringify(a).slice(0, 200).split(" "), exitCode: 0 });
               },
-            ],
-            system: getSystemPrompt(agent.name, skillContent),
-            tools: registry,
+              onFlag: async (flag) => {
+                process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
+                await collectFlagsAndSave([flag]);
+              },
+            };
+
+            const result = await runAgent(specialistCtx);
+            await collectFlagsAndSave(result.flags);
+            return result;
+          };
+
+          const result = await runAgent({
+            agentDef: agent,
+            provider,
+            tools: registry_tools,
             toolContext,
-            maxIterations: config.agent.maxSteps,
+            config,
+            skillRegistry,
+            memoryDir,
+            mcpLifecycle,
+            initialObjective: userMessage,
+            onDelegate: agent.mode === "primary" ? delegateHandler : undefined,
             onToken: (token) => process.stdout.write(token),
             onToolCall: (tool, a) => {
-              process.stdout.write(`\n[tool: ${tool}]\n`);
+              process.stdout.write(`\n[${agent.name} | tool: ${tool}]\n`);
+              session.timeline.push({ type: "TOOL_EXEC", tool, args: JSON.stringify(a).slice(0, 200).split(" "), exitCode: 0 });
             },
-            onFlag: (flag) => {
+            onFlag: async (flag) => {
               process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
+              await collectFlagsAndSave([flag]);
             },
           });
+
+          session.timeline.push({ type: "HARNESS_TERMINATED", reason: result.terminationReason, iteration: result.iterations });
+          session.state = session.flags.length > 0 ? "completed" : "paused";
+          await SessionStore.save(session);
+
+          if (session.id) {
+            process.stdout.write(`\nSession: ${session.id} (${session.state})\n`);
+          }
         } catch (err: unknown) {
+          session.state = "error";
+          await SessionStore.save(session);
           const error = err instanceof Error ? err : new Error(String(err));
           console.error(`\nError: ${error.message || error}`);
           if (error.cause) console.error(`Cause: ${error.cause}`);
         }
         process.stdout.write("\n");
       } finally {
+        await mcpLifecycle.stopAll().catch(() => {});
         await runtime.dispose();
       }
     },

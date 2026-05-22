@@ -35,6 +35,7 @@ export interface AgentLoopOptions {
   initialObjective?: string;
   onToken?: (token: string) => void;
   onToolCall?: (tool: string, args: unknown) => void;
+  onToolCallAsync?: (tool: string, args: unknown) => Promise<AgentLoopResult | void>;
   onFlag?: (flag: string) => void;
 }
 
@@ -58,6 +59,7 @@ export async function runAgentLoop(
     initialObjective,
     onToken,
     onToolCall,
+    onToolCallAsync,
     onFlag,
   } = options;
 
@@ -117,6 +119,20 @@ export async function runAgentLoop(
         parameters: tool.parameters,
         execute: async (args: Record<string, unknown>) => {
           onToolCall?.(tool.id, args);
+
+          if (onToolCallAsync && tool.id === "delegate") {
+            const asyncResult = await onToolCallAsync(tool.id, args);
+            if (asyncResult) {
+              const delegateOutput = asyncResult.flags.length > 0
+                ? `Delegation complete. Flags found: ${asyncResult.flags.join(", ")}`
+                : `Delegation complete after ${asyncResult.iterations} iterations (${asyncResult.terminationReason})`;
+              emitFlags(delegateOutput);
+              shouldTerminate = true;
+              terminationReason = "delegation_complete";
+              return delegateOutput;
+            }
+          }
+
           if (permissions.length > 0) {
             const target = getTargetPattern(tool.id, args);
             const action: PermissionAction = evaluate(tool.id, target, permissions);
