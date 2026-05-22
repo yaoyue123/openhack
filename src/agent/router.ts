@@ -1,13 +1,18 @@
-import { AGENTS, type AgentDef } from "./types.js";
+import { AgentRegistry } from "./registry.js";
+import type { AgentDef } from "./types.js";
+
+const registry = AgentRegistry.create();
 
 export function getAgent(name: string): AgentDef | undefined {
-  return AGENTS[name];
+  return registry.get(name);
 }
 
 export function listAgents(): AgentDef[] {
-  return Object.values(AGENTS);
+  return registry.list();
 }
 
 export function getDefaultAgent(): AgentDef {
-  return AGENTS.triage;
+  return registry.getDefault();
 }
+
+export { registry };
