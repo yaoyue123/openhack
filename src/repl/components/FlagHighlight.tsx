@@ -1,5 +1,6 @@
 import React from "react";
 import { Text } from "ink";
+import { flagStyle } from "../theme.js";
 
 const FLAG_PATTERN = /((?:flag|HTB|CTF|picoCTF)\{[^}]+\})/g;
 
@@ -16,8 +17,8 @@ function FlagHighlight({ content }: FlagHighlightProps): React.JSX.Element {
         if (FLAG_PATTERN.test(part)) {
           FLAG_PATTERN.lastIndex = 0;
           return (
-            <Text key={i} bold color="green">
-              {`\u{1F6A9} ${part}`}
+            <Text key={i} bold color={flagStyle.color}>
+              {`${flagStyle.prefix} ${part}`}
             </Text>
           );
         }

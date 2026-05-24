@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { OpenhackConfig } from "./schema.js";
-import { DEFAULT_CONFIG } from "./schema.js";
+import { DEFAULT_CONFIG, parseConfig } from "./schema.js";
 
 export const CONFIG_DIR = join(homedir(), ".config", "openhack");
 export const CONFIG_PATH = join(CONFIG_DIR, "openhack.jsonc");
@@ -73,11 +73,13 @@ export class ConfigLoader {
 
     let config: OpenhackConfig;
     if (raw === null) {
-      config = { ...DEFAULT_CONFIG };
+      config = parseConfig(DEFAULT_CONFIG);
     } else {
       const cleaned = stripJsoncComments(raw);
-      const parsed = JSON.parse(cleaned) as Partial<OpenhackConfig>;
-      config = deepMerge({ ...DEFAULT_CONFIG }, parsed);
+      const parsed = JSON.parse(cleaned);
+      // Merge with defaults first, then validate
+      const merged = deepMerge({ ...DEFAULT_CONFIG }, parsed);
+      config = parseConfig(merged);
     }
 
     // Env vars override config file

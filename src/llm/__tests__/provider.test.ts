@@ -7,6 +7,7 @@ describe("createProvider", () => {
       baseURL: "http://localhost:11434/v1",
       model: "test-model",
       apiKey: "unused",
+      tokenizerModel: "gpt-4o",
     });
     expect(provider).toBeDefined();
     expect(provider.modelId).toBe("test-model");

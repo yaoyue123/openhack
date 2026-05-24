@@ -14,12 +14,20 @@ export interface BudgetConfig {
   maxTokens: number;
   compressThreshold: number;
   preserveRecentSteps: number;
+  /** Trigger compression proactively when usage exceeds this fraction of maxTokens (0-1). 0 disables. */
+  proactiveThreshold?: number;
+  /** Model name to use for tiktoken tokenization (e.g. "gpt-4o"). Used by token-counter for accurate estimation. */
+  tokenizerModel?: string;
+  /** Max user/assistant message pairs before sliding window trim kicks in. */
+  maxMessagePairs?: number;
+  /** Minimum message pairs to preserve after sliding window trim. */
+  minPreservePairs?: number;
 }
 
 export interface BudgetGuardResult {
   shouldCompress: boolean;
   currentUsage: number;
-  action: "continue" | "compress" | "terminate";
+  action: "continue" | "proactive" | "compress" | "terminate";
 }
 
 export interface TerminatorConfig {
@@ -47,6 +55,10 @@ export const DEFAULT_HARNESS_CONFIG: HarnessConfig = {
     maxTokens: 100000,
     compressThreshold: 70000,
     preserveRecentSteps: 5,
+    proactiveThreshold: 0.6,
+    tokenizerModel: "gpt-4o",
+    maxMessagePairs: 50,
+    minPreservePairs: 10,
   },
   terminator: {
     maxStepsWithoutProgress: 10,

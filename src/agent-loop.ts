@@ -7,12 +7,53 @@ import type { ToolContext } from "./tool/types.js";
 import type { PermissionRule } from "./config/schema.js";
 import type { HarnessConfig } from "./harness/types.js";
 import type { MemoryConfig } from "./memory/types.js";
+import { estimateTokens } from "./llm/token-counter.js";
 import { detectFlags } from "./tool/flag.js";
 import { evaluate, type PermissionAction } from "./permission/evaluate.js";
 import { Harness } from "./harness/index.js";
 import { MemoryManager } from "./memory/index.js";
 import { DEFAULT_HARNESS_CONFIG } from "./harness/types.js";
 import { DEFAULT_MEMORY_CONFIG } from "./memory/types.js";
+import type { PauseController } from "./agent/pause-controller.js";
+import type { HackEvent, EventCallback } from "./session/events.js";
+
+/**
+ * Sliding window trim: remove oldest user/assistant message pairs
+ * when total pairs exceed maxPairs.
+ * Preserves system messages, compressed summaries, and flag-containing messages.
+ */
+function trimMessages(
+  messages: ModelMessage[],
+  maxPairs: number,
+  minPreserve: number,
+): ModelMessage[] {
+  // Count user messages (pairs)
+  const userIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "user") {
+      userIndices.push(i);
+    }
+  }
+
+  if (userIndices.length <= maxPairs) return messages;
+
+  // Don't trim more than (userCount - minPreserve)
+  const toRemove = userIndices.length - maxPairs;
+  const actualRemove = Math.min(toRemove, userIndices.length - minPreserve);
+  if (actualRemove <= 0) return messages;
+
+  // Find the cutoff index: after the (actualRemove)-th user message
+  const cutoffUserIndex = userIndices[actualRemove - 1];
+  // Include the assistant response that follows the last removed user message
+  const cutoffIndex = cutoffUserIndex + 1;
+  // Ensure we don't cut in the middle of a pair (check if next message is assistant)
+  const nextIsAssistant = cutoffIndex < messages.length && messages[cutoffIndex]?.role === "assistant";
+
+  // Keep from cutoff (plus assistant response) onward + any non-pair system messages at the start
+  const keepFrom = nextIsAssistant ? cutoffIndex - 1 : cutoffIndex;
+
+  return messages.slice(keepFrom);
+}
 
 function getTargetPattern(toolId: string, args: Record<string, any>): string {
   if (toolId === "bash") return args.command ?? "";
@@ -37,6 +78,13 @@ export interface AgentLoopOptions {
   onToolCall?: (tool: string, args: unknown) => void;
   onToolCallAsync?: (tool: string, args: unknown) => Promise<AgentLoopResult | void>;
   onFlag?: (flag: string) => void;
+  abortSignal?: AbortSignal;
+  /** Pause controller for REPL mode. When provided, the loop pauses after maxStepsPerRun iterations. */
+  pauseController?: PauseController;
+  /** If set, force tool choice on the first iteration (e.g. "none" for greetings). Cleared after first call. */
+  initialToolChoice?: "none" | "auto" | "required";
+  /** Event callback for session timeline events */
+  onEvent?: EventCallback;
 }
 
 export interface AgentLoopResult {
@@ -61,6 +109,8 @@ export async function runAgentLoop(
     onToolCall,
     onToolCallAsync,
     onFlag,
+    initialToolChoice,
+    onEvent,
   } = options;
 
   const harness = new Harness(options.harnessConfig);
@@ -137,13 +187,28 @@ export async function runAgentLoop(
             const target = getTargetPattern(tool.id, args);
             const action: PermissionAction = evaluate(tool.id, target, permissions);
             if (action === "deny") {
-              return "Permission denied";
+              return `Permission denied: tool "${tool.id}" on "${target}" is not allowed`;
             }
             if (action === "ask") {
-              return "Permission requires confirmation (ask mode)";
+              // In REPL mode, try to prompt user for confirmation
+              if (options.pauseController && typeof options.pauseController.askConfirm === "function") {
+                try {
+                  const confirmed = await options.pauseController.askConfirm(
+                    `Allow ${tool.id}(${args.command ?? args.filePath ?? args.pattern ?? "..."})?`,
+                  );
+                  if (!confirmed) {
+                    return `Permission denied by user: ${tool.id}`;
+                  }
+                } catch {
+                  return `Permission requires interactive confirmation (${tool.id})`;
+                }
+              } else {
+                return `Permission requires confirmation for: ${tool.id} on "${target}". Set permission rule to "allow" to skip this.`;
+              }
             }
           }
           const result = await tool.execute(args, toolContext);
+          onEvent?.({ type: "TOOL_EXEC", tool: tool.id, args: Object.values(args).map(String), exitCode: 0 });
           let output = result.output ?? "";
           if (output.length > 10000) {
             output =
@@ -169,11 +234,16 @@ export async function runAgentLoop(
     let stepMessages: ModelMessage[] = [];
     let stepFullText = "";
 
+    // Only apply initialToolChoice on iteration 0, then allow tools normally
+    const toolChoice = iteration === 0 ? initialToolChoice : undefined;
+
     const result = streamText({
       model: provider.languageModel(),
       system: systemPrompt,
       messages,
       tools: aiTools,
+      ...(toolChoice ? { toolChoice } : {}),
+      abortSignal: options.abortSignal,
       stopWhen: stepCountIs(Math.min(maxIterations - iteration, 10)),
       onStepFinish: async ({ response: stepResponse }) => {
         iteration++;
@@ -183,6 +253,7 @@ export async function runAgentLoop(
           const loopResult = harness.checkLoop(stepResponse.messages);
           if (loopResult.isLoop && loopResult.repeatCount >= harness.config.loop.maxRepeats) {
             pendingLoopWarning = loopResult.suggestion ?? null;
+            onEvent?.({ type: "LOOP_DETECTED", repeatCount: loopResult.repeatCount, suggestion: loopResult.suggestion ?? "" });
           }
 
           const stateContent = await memory.readState().catch(() => null);
@@ -194,15 +265,23 @@ export async function runAgentLoop(
           }
 
           const budgetResult = harness.checkBudget(messages);
-          if (budgetResult.shouldCompress && memory) {
-            const compressed = await memory.compress(messages, harness.config.budget.preserveRecentSteps);
-            messages = compressed.messages;
-            await memory.appendLog(`Compressed: saved ${compressed.tokensSaved} tokens`);
-          }
           if (budgetResult.action === "terminate") {
             shouldTerminate = true;
             terminationReason = "budget_exhausted";
+            onEvent?.({ type: "HARNESS_TERMINATED", reason: "budget_exhausted", iteration });
             return;
+          }
+          if (budgetResult.action === "proactive" || budgetResult.action === "compress") {
+            const estTokens = estimateTokens(messages.map((m) => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join(""));
+            onEvent?.({ type: "BUDGET_WARNING", currentTokens: estTokens, maxTokens: harness.config.budget.maxTokens });
+          }
+          if ((budgetResult.action === "compress" || budgetResult.action === "proactive") && memory) {
+            const compressed = await memory.compress(messages, harness.config.budget.preserveRecentSteps);
+            const msgsBefore = messages.length;
+            messages = compressed.messages;
+            const actionLabel = budgetResult.action === "proactive" ? "Proactive compress" : "Compressed";
+            await memory.appendLog(`${actionLabel}: saved ${compressed.tokensSaved} tokens (${compressed.messages.length} msgs)`);
+            onEvent?.({ type: "CONTEXT_COMPRESSED", tokensSaved: compressed.tokensSaved, messagesBefore: msgsBefore, messagesAfter: compressed.messages.length });
           }
         }
 
@@ -233,6 +312,17 @@ export async function runAgentLoop(
     const response = await result.response;
     messages = response.messages;
 
+    // Apply sliding window trim if messages are too long
+    const trimmedCount = messages.length;
+    messages = trimMessages(
+      messages,
+      harness.config.budget.maxMessagePairs ?? 50,
+      harness.config.budget.minPreservePairs ?? 10,
+    );
+    if (messages.length < trimmedCount && memory) {
+      await memory.appendLog(`Trimmed: removed ${trimmedCount - messages.length} old messages (window: ${messages.length})`);
+    }
+
     if (pendingLoopWarning) {
       messages.push({
         role: "system",
@@ -240,6 +330,30 @@ export async function runAgentLoop(
       } as ModelMessage);
       pendingLoopWarning = null;
     }
+
+    // --- Pause checkpoint (REPL mode only) ---
+    if (options.pauseController && !shouldTerminate) {
+      if (options.pauseController.shouldPause()) {
+        try {
+          const action = await options.pauseController.waitForResume();
+          if (action === "stop") {
+            shouldTerminate = true;
+            terminationReason = "user_stop";
+          } else if (typeof action === "object" && "redirect" in action) {
+            // Inject redirect message into conversation
+            messages.push({ role: "user", content: action.redirect } as ModelMessage);
+          }
+          // "continue" → loop proceeds normally
+        } catch (err) {
+          // Abort during pause — propagate
+          if ((err as Error).name === "AbortError") throw err;
+          // Other errors during pause — terminate gracefully
+          shouldTerminate = true;
+          terminationReason = "pause_error";
+        }
+      }
+    }
+    // --- END pause checkpoint ---
   }
 
   if (!terminationReason) {

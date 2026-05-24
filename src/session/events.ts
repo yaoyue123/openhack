@@ -13,18 +13,3 @@ export type HackEvent =
   | { type: "MEMORY_FILE_WRITTEN"; file: string; bytesWritten: number }
 
 export type EventCallback = (event: HackEvent) => void
-
-export class EventBus {
-  private listeners: EventCallback[] = []
-
-  on(cb: EventCallback): () => void {
-    this.listeners.push(cb)
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== cb)
-    }
-  }
-
-  emit(event: HackEvent): void {
-    for (const cb of this.listeners) cb(event)
-  }
-}

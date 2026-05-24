@@ -6,6 +6,8 @@ const PHASE_PATTERN = /^##\s*Phase\s*\n\s*(\w+)/mi;
 
 export class Terminator {
   private readonly config: TerminatorConfig;
+  private previousPhase: string | null = null;
+  private stepsWithoutPhaseChange: number = 0;
 
   constructor(config: TerminatorConfig) {
     this.config = config;
@@ -15,13 +17,34 @@ export class Terminator {
     messages: ModelMessage[],
     stateContent: string | null,
   ): TerminatorResult {
+    // 1. Check state.md phase transitions for stall detection
     if (stateContent) {
       const phaseMatch = PHASE_PATTERN.exec(stateContent);
-      if (phaseMatch && phaseMatch[1].toLowerCase() === "done") {
-        return { shouldTerminate: true, reason: "agent_declared_done" };
+      if (phaseMatch) {
+        const currentPhase = phaseMatch[1].toLowerCase();
+
+        // Phase "done" → immediate termination
+        if (currentPhase === "done") {
+          return { shouldTerminate: true, reason: "agent_declared_done" };
+        }
+
+        // Track phase changes for stall detection
+        if (this.previousPhase !== null && currentPhase === this.previousPhase) {
+          this.stepsWithoutPhaseChange++;
+        } else {
+          this.stepsWithoutPhaseChange = 0;
+        }
+        this.previousPhase = currentPhase;
+
+        // Check if stalled
+        if (this.config.maxStepsWithoutProgress > 0 &&
+            this.stepsWithoutPhaseChange >= this.config.maxStepsWithoutProgress) {
+          return { shouldTerminate: true, reason: "no_progress" };
+        }
       }
     }
 
+    // 2. Check messages for flag patterns
     for (const msg of messages) {
       const text = this.extractText(msg);
       if (text) {

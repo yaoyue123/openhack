@@ -14,6 +14,7 @@ import { MemoryQueryTool } from "./memory-query.js";
 import { MemoryWriteTool } from "./memory-write.js";
 import { DelegateTool } from "./delegate.js";
 import { ReflectTool } from "./reflect.js";
+import { GitTool } from "./git.js";
 
 export class ToolRegistry {
   private tools: Map<string, ToolDef> = new Map();
@@ -36,6 +37,7 @@ export class ToolRegistry {
       MemoryWriteTool,
       DelegateTool,
       ReflectTool,
+      GitTool,
     ];
     for (const tool of builtins) reg.register(tool);
     return reg;

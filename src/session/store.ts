@@ -17,6 +17,7 @@ export interface Session {
   flags: string[]
   state: "idle" | "running" | "paused" | "completed" | "error"
   agentHistory: string[]
+  messages?: unknown[]
 }
 
 const SESSION_DIR = path.join(os.homedir(), ".openhack", "sessions")

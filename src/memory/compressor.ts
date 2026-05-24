@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai"
 import type { CompressionResult } from "./types.js"
+import { estimateTokens } from "../llm/token-counter.js"
 
 const FLAG_PATTERN = /(flag|HTB|CTF|picoCTF)\{[^}]+\}/gi
 
@@ -66,11 +67,13 @@ export async function compress(
   const recent = messages.slice(messages.length - preserveRecent)
 
   let totalOldChars = 0
+  const oldTexts: string[] = []
   const actions: string[] = []
   const flags: string[] = []
 
   for (const msg of older) {
     const text = extractText(msg)
+    if (text) oldTexts.push(text)
     totalOldChars += text.length
 
   const toolParts = extractToolCalls(msg)
@@ -114,7 +117,7 @@ export async function compress(
   }
 
   const summary = summaryLines.join("\n")
-  const tokensSaved = Math.ceil((totalOldChars - summary.length) / 4)
+  const tokensSaved = Math.max(0, estimateTokens(oldTexts.join("\n")) - estimateTokens(summary))
 
   const summaryMessage: ModelMessage = {
     role: "system",

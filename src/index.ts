@@ -10,11 +10,12 @@ import { runAgentLoop } from "./agent-loop.js";
 import { ToolRegistry } from "./tool/registry.js";
 import type { OpenhackConfig } from "./config/schema.js";
 import type { ToolContext } from "./tool/types.js";
-import { getAgent, getDefaultAgent, registry } from "./agent/router.js";
+import { getAgent } from "./agent/router.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { runAgent, type AgentRunContext } from "./agent/runtime.js";
-import type { DelegateRequest } from "./agent/types.js";
+import { runSolve } from "./solve.js";
 import { getSystemPrompt } from "./llm/system-prompt.js";
+import { isGreetingOrNonTask } from "./llm/greeting-detect.js";
 import { SessionStore } from "./session/store.js";
 import { SkillRegistry } from "./skill/registry.js";
 import { ConfigLoader, stripJsoncComments } from "./config/loader.js";
@@ -157,11 +158,6 @@ const cli = yargs(hideBin(process.argv))
       const agentRegistry = await AgentRegistry.createWithUserAgents(workDir);
 
       const agentName = (args.agent as string | undefined) ?? args.category ?? undefined;
-      const agent = agentName ? agentRegistry.get(agentName) : agentRegistry.getDefault();
-      if (!agent) {
-        console.error(`Unknown agent: ${agentName}`);
-        process.exit(1);
-      }
 
       const runtime = createAppRuntime(workDir);
       const mcpLifecycle = new MCPLifecycle();
@@ -179,125 +175,33 @@ const cli = yargs(hideBin(process.argv))
         const registry_tools = ToolRegistry.createBuiltin();
         const skillRegistry = await SkillRegistry.create(process.cwd());
 
-        const pathContext =
-          paths.length > 0 ? `\n\nWorking directory: ${paths.join(", ")}` : "";
-
-        let challengeInfo: Partial<{ name: string; category: string; description: string; files: string[] }> = {};
-        let challengeContext = pathContext;
-        try {
-          const fs = await import("node:fs/promises");
-          const nodePath = await import("node:path");
-          const jsonPath = nodePath.join(workDir, "challenge.json");
-          const raw = await fs.readFile(jsonPath, "utf-8");
-          const chal = JSON.parse(raw);
-          const { flag: _, ...safe } = chal;
-          challengeInfo = { name: safe.name, category: safe.category, description: safe.description, files: safe.files };
-          challengeContext = `\n\nChallenge: ${safe.name || "Unknown"}\nCategory: ${safe.category || "unknown"}\nDescription: ${safe.description || "No description"}\nFiles: ${(safe.files || []).join(", ")}\nDirectory: ${paths.join(", ")}`;
-        } catch {
-          challengeContext = pathContext;
-        }
-
-        const session = await SessionStore.create({
-          name: challengeInfo.name,
-          category: challengeInfo.category ?? agent.name,
-          description: challengeInfo.description,
-          files: challengeInfo.files ?? paths,
-        });
-        session.state = "running";
-        session.agentHistory.push(agent.name);
-        await SessionStore.save(session);
-
         const toolContext: ToolContext = {
           workingDir: workDir,
-          sessionId: session.id,
+          sessionId: "cli",
           permissionCheck: async () => true,
         };
 
-        const userMessage = `Solve this CTF challenge using the ${agent.name} agent.${challengeContext}\n\nIMPORTANT: Do NOT read challenge.json for the answer. Analyze the actual challenge files to find the flag.`;
-
-        const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
-
-        const collectFlagsAndSave = async (flags: string[]) => {
-          for (const f of flags) {
-            if (!session.flags.includes(f)) {
-              session.flags.push(f);
-              session.timeline.push({ type: "FLAG_FOUND", flag: f, source: "agent" });
-            }
-          }
-          await SessionStore.save(session);
-        };
-
         try {
-          const delegateHandler = async (req: DelegateRequest) => {
-            const specialistDef = agentRegistry.get(req.targetAgent);
-            if (!specialistDef) {
-              process.stdout.write(`\n[Unknown specialist: ${req.targetAgent}]\n`);
-              return { messages: [], flags: [], iterations: 0, terminationReason: "unknown_agent" };
-            }
-
-            process.stdout.write(`\n[Delegating to ${req.targetAgent} specialist...]\n`);
-            session.timeline.push({ type: "AGENT_SWITCH", from: agent.name, to: req.targetAgent, reason: req.objective });
-            session.agentHistory.push(req.targetAgent);
-            await SessionStore.save(session);
-
-            const specialistCtx: AgentRunContext = {
-              agentDef: specialistDef,
-              provider,
-              tools: registry_tools,
-              toolContext,
-              config,
-              skillRegistry,
-              memoryDir,
-              mcpLifecycle,
-              initialObjective: `${req.objective}\n\n## Triage Context\n${req.context}`,
-              onToken: (token) => process.stdout.write(token),
-              onToolCall: (tool, a) => {
-                process.stdout.write(`\n[${req.targetAgent} | tool: ${tool}]\n`);
-                session.timeline.push({ type: "TOOL_EXEC", tool, args: JSON.stringify(a).slice(0, 200).split(" "), exitCode: 0 });
-              },
-              onFlag: async (flag) => {
-                process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
-                await collectFlagsAndSave([flag]);
-              },
-            };
-
-            const result = await runAgent(specialistCtx);
-            await collectFlagsAndSave(result.flags);
-            return result;
-          };
-
-          const result = await runAgent({
-            agentDef: agent,
+          const result = await runSolve({
+            workDir,
+            paths,
+            agentName,
+            config,
             provider,
             tools: registry_tools,
             toolContext,
-            config,
             skillRegistry,
-            memoryDir,
+            agentRegistry,
             mcpLifecycle,
-            initialObjective: userMessage,
-            onDelegate: agent.mode === "primary" ? delegateHandler : undefined,
-            onToken: (token) => process.stdout.write(token),
-            onToolCall: (tool, a) => {
-              process.stdout.write(`\n[${agent.name} | tool: ${tool}]\n`);
-              session.timeline.push({ type: "TOOL_EXEC", tool, args: JSON.stringify(a).slice(0, 200).split(" "), exitCode: 0 });
-            },
-            onFlag: async (flag) => {
-              process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`);
-              await collectFlagsAndSave([flag]);
+            callbacks: {
+              onToken: (token) => process.stdout.write(token),
+              onToolCall: (tool, _a) => process.stdout.write(`\n[tool: ${tool}]\n`),
+              onFlag: async (flag) => { process.stdout.write(`\n🚩 FLAG DETECTED: ${flag}\n`); },
             },
           });
 
-          session.timeline.push({ type: "HARNESS_TERMINATED", reason: result.terminationReason, iteration: result.iterations });
-          session.state = session.flags.length > 0 ? "completed" : "paused";
-          await SessionStore.save(session);
-
-          if (session.id) {
-            process.stdout.write(`\nSession: ${session.id} (${session.state})\n`);
-          }
+          process.stdout.write(`\nSession: ${result.session.id} (${result.session.state})\n`);
         } catch (err: unknown) {
-          session.state = "error";
-          await SessionStore.save(session);
           const error = err instanceof Error ? err : new Error(String(err));
           console.error(`\nError: ${error.message || error}`);
           if (error.cause) console.error(`Cause: ${error.cause}`);
@@ -528,7 +432,220 @@ const cli = yargs(hideBin(process.argv))
         .demandCommand(),
     () => {},
   )
-  .demandCommand()
-  .strict();
+  .command(
+    "$0",
+    false as any,
+    () => {},
+    async () => {
+      const runtime = createAppRuntime(process.cwd());
+      try {
+        const config = await runtime.runPromise(
+          Effect.flatMap(ConfigService, (svc) => svc.get()),
+        ) as OpenhackConfig;
+
+        if (!config.llm.baseURL) {
+          console.log("No config found. Run 'openhack init' first to configure your LLM backend.");
+          process.exit(1);
+        }
+
+        const provider = createProvider(config.llm);
+        const registry = ToolRegistry.createBuiltin();
+        const skillRegistry = await SkillRegistry.create(process.cwd());
+        const agentRegistry = await AgentRegistry.createWithUserAgents(process.cwd());
+
+        const session = await SessionStore.create();
+        session.state = "running";
+        await SessionStore.save(session);
+
+        const toolContext: ToolContext = {
+          workingDir: process.cwd(),
+          sessionId: session.id,
+          permissionCheck: async () => true,
+        };
+
+        let currentProvider = provider;
+        let currentAgent = "triage";
+        const messageHistory: import("ai").ModelMessage[] = [];
+        let abortController: AbortController | null = null;
+
+        const { startREPL } = await import("./repl/index.js");
+        const { getToolStatus } = await import("./repl/types.js");
+        const { PauseController } = await import("./agent/pause-controller.js");
+        const { MemoryManager } = await import("./memory/index.js");
+
+        // Shared memory manager for reading phase info
+        const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
+        const memoryManager = new MemoryManager(memoryDir);
+        await memoryManager.ensureDir();
+
+        const handle = startREPL({
+          onSubmit: async (message: string) => {
+            messageHistory.push({ role: "user", content: message });
+
+            abortController = new AbortController();
+
+            // Create pause controller for this run
+            const pauseController = new PauseController({
+              maxStepsPerRun: 8,
+              abortSignal: abortController.signal,
+            });
+            handle.setPauseController(pauseController);
+
+            // Wire pause state changes to REPL
+            let toolCallCount = 0;
+            let cachedPhase: string | undefined;
+            pauseController.onStateChange((state) => {
+              handle.setStepContext({
+                iteration: state.stepsThisRun,
+                maxSteps: state.maxSteps,
+                toolCallCount,
+                phase: cachedPhase,
+              });
+
+              // Async phase update (fire and forget)
+              memoryManager.readState().then((stateContent) => {
+                const phaseMatch = stateContent.match(/Phase:\s*(\S+)/i);
+                const newPhase = phaseMatch?.[1];
+                if (newPhase !== cachedPhase) {
+                  cachedPhase = newPhase;
+                  handle.setStepContext({
+                    iteration: state.stepsThisRun,
+                    maxSteps: state.maxSteps,
+                    toolCallCount,
+                    phase: cachedPhase,
+                  });
+                }
+              }).catch(() => {});
+
+              if (state.state === "paused") {
+                handle.setAgentRunState({ state: "paused", stepIndex: state.stepsThisRun, maxSteps: state.maxSteps });
+              } else if (state.state === "running") {
+                handle.setAgentRunState({ state: "running" });
+              }
+            });
+
+            try {
+              // Classify message: if it's a greeting/non-task, force no tools on first iteration
+              const toolChoice = isGreetingOrNonTask(message) ? "none" as const : undefined;
+
+              await runAgentLoop({
+                provider: currentProvider,
+                messages: messageHistory,
+                system: getSystemPrompt(currentAgent),
+                tools: registry,
+                toolContext,
+                maxIterations: config.agent.maxSteps,
+                abortSignal: abortController.signal,
+                pauseController,
+                initialToolChoice: toolChoice,
+                onToken: (token) => handle.appendStreaming(token),
+                onToolCall: (tool, args) => {
+                  toolCallCount++;
+                  handle.setStatus(getToolStatus(tool));
+                  handle.addToolCall(tool, JSON.stringify(args).slice(0, 200));
+                },
+                onFlag: (flag) => {
+                  handle.addMessage({ role: "system", content: `\u{1F3C6} FLAG: ${flag}` });
+                  session.flags.push(flag);
+                },
+                onToolCallAsync: async (tool, args) => {
+                  // Handle delegation from triage to specialist agents
+                  if (tool === "delegate") {
+                    const delegateArgs = args as { targetAgent?: string; objective?: string; context?: string };
+                    const targetAgent = delegateArgs.targetAgent;
+                    if (!targetAgent) return undefined;
+
+                    const specialistDef = agentRegistry.get(targetAgent);
+                    if (!specialistDef) {
+                      handle.addMessage({ role: "system", content: `Unknown specialist agent: ${targetAgent}` });
+                      return undefined;
+                    }
+
+                    session.timeline.push({ type: "AGENT_SWITCH", from: currentAgent, to: targetAgent, reason: delegateArgs.objective ?? "delegation" });
+                    session.agentHistory.push(targetAgent);
+                    await SessionStore.save(session);
+
+                    const { runAgent } = await import("./agent/runtime.js");
+                    const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
+                    const mcpLifecycle = new MCPLifecycle();
+
+                    return runAgent({
+                      agentDef: specialistDef,
+                      provider: currentProvider,
+                      tools: registry,
+                      toolContext,
+                      config,
+                      skillRegistry,
+                      memoryDir,
+                      mcpLifecycle,
+                      initialObjective: `${delegateArgs.objective ?? ""}\n\n## Triage Context\n${delegateArgs.context ?? ""}`,
+                      onToken: (token) => handle.appendStreaming(token),
+                      onToolCall: (t, a) => {
+                        toolCallCount++;
+                        handle.setStatus(getToolStatus(t));
+                        handle.addToolCall(t, JSON.stringify(a).slice(0, 200));
+                      },
+                      onFlag: async (flag) => {
+                        handle.addMessage({ role: "system", content: `\u{1F3C6} FLAG: ${flag}` });
+                        session.flags.push(flag);
+                        await SessionStore.save(session);
+                      },
+                    });
+                  }
+                  return undefined;
+                },
+              });
+            } catch (err: unknown) {
+              if ((err as Error).name !== "AbortError") {
+                const msg = err instanceof Error ? err.message : String(err);
+                handle.addMessage({ role: "system", content: `Error: ${msg}` });
+              }
+            }
+
+            handle.setAgentRunState({ state: "idle" });
+            handle.setStepContext(null);
+            session.messages = messageHistory;
+            await SessionStore.save(session);
+          },
+          agentName: "triage",
+          version: "0.0.1",
+        });
+
+        // Set up slash context for REPL
+        const slashCtx: import("./repl/slash-commands.js").SlashContext = {
+          addOutput: (text: string) => handle.addMessage({ role: "system", content: text }),
+          getProvider: () => currentProvider,
+          setProvider: (p) => { currentProvider = p; },
+          getSession: () => session,
+          setSession: (s) => { Object.assign(session, s); },
+          getAgentName: () => currentAgent,
+          setAgentName: (name) => { currentAgent = name; handle.setAgent(name); },
+          getMessages: () => messageHistory,
+          getConfig: () => config,
+          exit: () => {
+            session.state = "paused";
+            SessionStore.save(session).then(() => handle.unmount());
+          },
+        };
+
+        // Wire slash context
+        handle.setSlashContext(slashCtx);
+
+        // Set model info for status bar
+        handle.setModelInfo(config.llm.model, session.id, 0, config.harness.budget.maxTokens);
+
+        // Override clear command
+        handle.getSlashRegistry().register({
+          name: "clear",
+          description: "Clear the screen",
+          async execute() { handle.clearMessages(); },
+        });
+
+        await handle.waitUntilExit();
+      } finally {
+        await runtime.dispose();
+      }
+    },
+  );
 
 await cli.parse();
