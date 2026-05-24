@@ -23,15 +23,48 @@ Workflow: checksec → disassemble → find vuln → pwntools exploit.`;
 
 const REVERSE_PROMPT = `Reverse engineering specialist.
 
-Tools: objdump, readelf, strings, gdb, strace, ltrace.
+Tools: read tool (hex dump), python (for binary analysis), strings extraction via python.
 
-Workflow: file type → strings/symbols → disassemble key functions → understand algorithm → extract flag/key.`;
+Workflow: identify file type (magic bytes via python) → find symbols/strings → analyze key functions → understand algorithm → extract flag/key.
+
+For .pyc files: use xdis to extract constants and decompile.`;
 
 const CRYPTO_PROMPT = `Cryptography specialist.
 
-Attacks: frequency analysis, known-plaintext, padding oracle, RSA (small exponent, factorization), block cipher (ECB/CBC), hash collisions, length extension.
+## Workflow
 
-Identify algorithm first, then find implementation flaws.`;
+1. Identify: Read challenge files to determine cipher type (RSA, AES, XOR, etc.)
+2. Extract: Get key parameters (n,e,c,p,q,iv,key,ciphertext) from files or .pyc constants
+3. Analyze: Apply the appropriate attack from the crypto skill knowledge
+4. Solve: Write a python script to decrypt/recover the flag
+5. Verify: Use the flag tool
+
+## Handling .pyc (Python Compiled) Files
+
+- Use \`read\` tool to get a hex dump of the .pyc file
+- Use python with xdis to extract constants: \`from xdis import load_module; import marshal\`
+- Common RSA pattern: p and q stored as Python integers in .pyc constants
+- Extract with: \`xdis\` → \`code.co_consts\` contains embedded values (p, q, e, c, n)
+
+## RSA Attack Quick Reference
+
+- Known p,q,e,c: \`m = pow(c, pow(e, -1, (p-1)*(q-1)), n)\`
+- Small e (3, 5): Take integer eth root of c
+- Small d: Wiener's attack continued fraction
+- p,q close: Fermat factorization
+- gcd(n1, n2) > 1: Shared prime factoring
+- Known plaintext: XOR or RSA homomorphism
+
+## Key Python Packages Available
+
+- pycryptodome (Crypto.Util.number, Crypto.PublicKey.RSA)
+- sympy (factorint, isprime, nextprime)
+- xdis, uncompyle6 (for .pyc processing)
+- scapy (for pcap)
+
+## General Approach
+
+Identify algorithm first, then find implementation flaws. Use python for all computation.`;
 
 const FORENSICS_PROMPT = `Digital forensics specialist.
 
