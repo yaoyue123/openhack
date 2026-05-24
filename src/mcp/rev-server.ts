@@ -3,6 +3,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { execa } from "execa";
+import { formatToolError } from "./check-command.js";
 
 const MAX_OUTPUT = 50000;
 
@@ -12,18 +13,12 @@ function truncate(output: string): string {
     : output;
 }
 
-function makeError(err: unknown) {
-  const e = err as { stdout?: string; stderr?: string; message?: string };
+function makeError(err: unknown, binary?: string) {
   return {
     content: [
       {
         type: "text" as const,
-        text:
-          (e.stdout ?? "") +
-          "\n" +
-          (e.stderr ?? "") +
-          "\n" +
-          (e.message ?? String(err)),
+        text: formatToolError(err, binary),
       },
     ],
     isError: true as const,
@@ -164,7 +159,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ],
       };
     } catch (err: unknown) {
-      return makeError(err);
+      return makeError(err, "analyzeHeadless");
     }
   }
 
@@ -187,7 +182,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ],
       };
     } catch (err: unknown) {
-      return makeError(err);
+      return makeError(err, "strings");
     }
   }
 
@@ -225,7 +220,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
       } catch (err: unknown) {
-        return makeError(err);
+        return makeError(err, "od");
       }
     }
   }
@@ -246,7 +241,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ],
       };
     } catch (err: unknown) {
-      return makeError(err);
+      return makeError(err, "r2");
     }
   }
 

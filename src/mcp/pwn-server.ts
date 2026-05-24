@@ -3,6 +3,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { execa } from "execa";
+import { formatToolError } from "./check-command.js";
 
 const server = new Server(
   { name: "pwn-tools", version: "0.1.0" },
@@ -74,13 +75,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{ type: "text" as const, text: r.stdout }],
         };
       } catch (e2: unknown) {
+        const eMsg = formatToolError(e2, "readelf");
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: e2 instanceof Error ? e2.message : String(e2),
-            },
-          ],
+          content: [{ type: "text" as const, text: eMsg }],
           isError: true,
         };
       }
@@ -100,13 +97,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [{ type: "text" as const, text: output }],
       };
     } catch (err: unknown) {
+      const eMsg = formatToolError(err, "objdump");
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: err instanceof Error ? err.message : String(err),
-          },
-        ],
+        content: [{ type: "text" as const, text: eMsg }],
         isError: true,
       };
     }
@@ -124,19 +117,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ],
       };
     } catch (err: unknown) {
-      const e = err as { stdout?: string; stderr?: string; message?: string };
+      const eMsg = formatToolError(err, "python3");
       return {
-        content: [
-          {
-            type: "text" as const,
-            text:
-              (e.stdout ?? "") +
-              "\n" +
-              (e.stderr ?? "") +
-              "\n" +
-              (e.message ?? String(err)),
-          },
-        ],
+        content: [{ type: "text" as const, text: eMsg }],
         isError: true,
       };
     }
