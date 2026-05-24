@@ -8,6 +8,9 @@ describe("createProvider", () => {
       model: "test-model",
       apiKey: "unused",
       tokenizerModel: "gpt-4o",
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      maxDelayMs: 30000,
     });
     expect(provider).toBeDefined();
     expect(provider.modelId).toBe("test-model");

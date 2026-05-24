@@ -69,23 +69,22 @@ export function createProvider(config: LLMConfig): Provider {
 
   // Build provider with retry-wrapped language model
   const retryConfig: RetryConfig = {
-    maxRetries: (config as any).maxRetries ?? DEFAULT_RETRY.maxRetries,
-    initialDelayMs: (config as any).initialDelayMs ?? DEFAULT_RETRY.initialDelayMs,
-    maxDelayMs: (config as any).maxDelayMs ?? DEFAULT_RETRY.maxDelayMs,
+    maxRetries: config.maxRetries,
+    initialDelayMs: config.initialDelayMs,
+    maxDelayMs: config.maxDelayMs,
   };
 
   let fallbackProvider: ReturnType<typeof createOpenAICompatible> | null = null;
   let fallbackModel: string | undefined;
 
   // Check for fallback config in the llm config
-  const configAny = config as any;
-  if (configAny.fallbackModel || configAny.fallbackBaseURL) {
-    fallbackModel = configAny.fallbackModel ?? config.model;
-    const fallbackURL = configAny.fallbackBaseURL ?? config.baseURL;
+  if (config.fallbackModel || config.fallbackBaseURL) {
+    fallbackModel = config.fallbackModel ?? config.model;
+    const fallbackURL = config.fallbackBaseURL ?? config.baseURL;
     fallbackProvider = createOpenAICompatible({
       name: "openhack-fallback",
       baseURL: fallbackURL,
-      apiKey: (configAny.fallbackApiKey ?? config.apiKey) || "unused",
+      apiKey: (config.fallbackApiKey ?? config.apiKey) || "unused",
     });
   }
 
@@ -107,8 +106,8 @@ export function createProvider(config: LLMConfig): Provider {
           get(target, prop, receiver) {
             const orig = Reflect.get(target, prop, receiver);
             if (typeof orig !== "function") return orig;
-            return (...args: any[]) => withRetry(
-              () => orig.apply(target, args as any),
+            return (...args: never[]) => withRetry(
+              () => orig.apply(target, args),
               retryConfig,
               `LLM call (${String(prop)})`,
             );
@@ -124,10 +123,10 @@ export function createProvider(config: LLMConfig): Provider {
         get(target, prop, receiver) {
           const orig = Reflect.get(target, prop, receiver);
           if (typeof orig !== "function") return orig;
-          return async (...args: any[]) => {
+          return async (...args: never[]) => {
             try {
               return await withRetry(
-                () => orig.apply(target, args as any),
+                () => orig.apply(target, args),
                 retryConfig,
                 `LLM call (${String(prop)})`,
               );
@@ -135,7 +134,7 @@ export function createProvider(config: LLMConfig): Provider {
               // Fallback on failure
               const fbFunc = Reflect.get(fallbackModelInstance, prop, fallbackModelInstance);
               if (typeof fbFunc === "function") {
-                return fbFunc.apply(fallbackModelInstance, args as any);
+                return fbFunc.apply(fallbackModelInstance, args);
               }
               throw primaryErr;
             }

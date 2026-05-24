@@ -1,4 +1,4 @@
-import { encoding_for_model, type Tiktoken } from "tiktoken";
+import { encoding_for_model, type Tiktoken, type TiktokenModel } from "tiktoken";
 
 /**
  * Thread-safe wrapper around tiktoken with lazy per-encoding caching.
@@ -30,6 +30,9 @@ function encodingNameForModel(model: string): string {
   // text-embedding
   if (lower.startsWith("text-embedding")) return "cl100k_base";
 
+  // DeepSeek series (V2, V3, R1, flash) — closest to o200k_base
+  if (lower.includes("deepseek")) return "o200k_base";
+
   // Default for Ollama/local models — most use a llama/GPT-2 tokenizer
   return "cl100k_base";
 }
@@ -47,7 +50,7 @@ export function estimateTokens(text: string, model?: string): number {
     // Reuse cached encoding if same model
     if (_enc === null || _encModel !== encName) {
       _enc?.free();
-      _enc = encoding_for_model(encName as any) as unknown as Tiktoken;
+      _enc = encoding_for_model(encName as TiktokenModel) as unknown as Tiktoken;
       _encModel = encName;
     }
 
