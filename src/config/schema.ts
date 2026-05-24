@@ -10,6 +10,12 @@ export const LLMConfigSchema = z.object({
   model: z.string().default("default"),
   apiKey: z.string().default(""),
   tokenizerModel: z.string().default("gpt-4o"),
+  maxRetries: z.number().int().nonnegative().default(3),
+  initialDelayMs: z.number().int().nonnegative().default(1000),
+  maxDelayMs: z.number().int().nonnegative().default(30000),
+  fallbackModel: z.string().optional(),
+  fallbackBaseURL: z.string().optional(),
+  fallbackApiKey: z.string().optional(),
 });
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 
@@ -123,6 +129,9 @@ export const DEFAULT_CONFIG: OpenhackConfig = {
     model: "default",
     apiKey: "",
     tokenizerModel: "gpt-4o",
+    maxRetries: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 30000,
   },
   agent: {
     maxSteps: 25,

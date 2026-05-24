@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
 import type { TerminatorConfig, TerminatorResult } from "./types.js";
 
-const FLAG_PATTERN = /(flag|HTB|CTF|picoCTF)\{[^}]+\}/gi;
+const FLAG_PATTERN = /(flag|HTB|CTF|picoCTF|csawctf)\{[^}]+\}/gi;
 const PHASE_PATTERN = /^##\s*Phase\s*\n\s*(\w+)/mi;
 
 export class Terminator {

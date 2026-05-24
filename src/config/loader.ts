@@ -99,8 +99,67 @@ export class ConfigLoader {
   async save(config: Partial<OpenhackConfig>): Promise<void> {
     const dir = join(this.configPath, "..");
     await mkdir(dir, { recursive: true });
+
+    // Try to preserve JSONC comments by doing targeted in-file replacements
+    try {
+      const existing = await readFile(this.configPath, "utf-8");
+      const updated = this.applyKeyUpdates(existing, config);
+      if (updated !== null) {
+        await writeFile(this.configPath, updated, "utf-8");
+        return;
+      }
+    } catch {
+      // No existing file or parse error — fall through to full write
+    }
+
+    // Fallback: full rewrite (loses comments)
     const json = JSON.stringify(config, null, 2);
     await writeFile(this.configPath, json, "utf-8");
+  }
+
+  /**
+   * Attempt to apply config key updates to JSONC content via targeted line replacement.
+   * Returns null if any key cannot be matched (falls back to full rewrite).
+   */
+  private applyKeyUpdates(content: string, config: Partial<OpenhackConfig>): string | null {
+    let result = content;
+
+    for (const [topKey, topValue] of Object.entries(config)) {
+      if (topValue === null || topValue === undefined) continue;
+
+      if (typeof topValue === "object" && !Array.isArray(topValue)) {
+        // Update nested keys (e.g. llm.model, agent.maxSteps)
+        for (const [subKey, subValue] of Object.entries(topValue as Record<string, unknown>)) {
+          if (subValue === undefined) continue;
+          const pattern = new RegExp(
+            `("${subKey}"\\s*:\\s*)"[^"]*"`,
+            "i",
+          );
+          const serialized = typeof subValue === "string"
+            ? `"${subValue}"`
+            : String(subValue);
+          const replacement = `$1${serialized}`;
+          const prev = result;
+          result = result.replace(pattern, replacement);
+          if (result === prev) return null; // Key not found
+        }
+      } else {
+        // Update top-level key (unusual for this config structure)
+        const serialized = typeof topValue === "string"
+          ? `"${topValue}"`
+          : String(topValue);
+        const pattern = new RegExp(
+          `("${topKey}"\\s*:\\s*)"[^"]*"`,
+          "i",
+        );
+        const replacement = `$1${serialized}`;
+        const prev = result;
+        result = result.replace(pattern, replacement);
+        if (result === prev) return null; // Key not found
+      }
+    }
+
+    return result;
   }
 
   async exists(): Promise<boolean> {

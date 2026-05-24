@@ -6,13 +6,13 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
     "sourceMap": true,
     "jsx": "react-jsx",
-    "types": ["node"],
-    "paths": { "#/*": ["./src/*"] }
+    "types": ["node"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]

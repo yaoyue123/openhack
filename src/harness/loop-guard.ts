@@ -124,7 +124,7 @@ export class LoopGuard {
       repeatCount: maxRepeatCount,
       suggestion:
         isLoop
-          ? "你似乎在重复相同的操作。请尝试完全不同的方法。"
+          ? "WARNING: You appear to be repeating the same approach. Please try a completely different method."
           : undefined,
     };
   }
