@@ -49,6 +49,11 @@ export async function writeState(sessionDir: string, content: string): Promise<v
 }
 
 export function parsePhase(content: string): string | null {
+  // Match both "## Phase\n<value>" and "## Phase\n\n<value>" (with/without blank line)
   const match = /^##\s*Phase\s*\n\s*(\w+)/mi.exec(content)
-  return match ? match[1] : null
+  if (match) return match[1]
+
+  // Also match "## Phase" with content on the same line or after blank lines
+  const altMatch = /^##\s*Phase\s*:?\s*(\w+)/mi.exec(content)
+  return altMatch ? altMatch[1] : null
 }

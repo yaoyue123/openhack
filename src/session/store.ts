@@ -68,4 +68,13 @@ export const SessionStore = {
     }
     return sessions.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   },
-}
+
+  async delete(id: string): Promise<boolean> {
+    try {
+      await fs.unlink(path.join(SESSION_DIR, `${id}.json`));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};

@@ -14,7 +14,7 @@ export class MemoryStore {
     try {
       await fs.mkdir(this.memoryDir, { recursive: true })
     } catch {
-      // swallow file errors
+      // directory creation failures are non-fatal
     }
   }
 

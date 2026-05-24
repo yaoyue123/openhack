@@ -76,11 +76,10 @@ export async function compress(
     if (text) oldTexts.push(text)
     totalOldChars += text.length
 
-  const toolParts = extractToolCalls(msg)
+    const toolParts = extractToolCalls(msg)
     for (const tc of toolParts) {
       actions.push(`- Step: ${tc} → [output truncated]`)
     }
-
 
     const flagMatches = text.match(FLAG_PATTERN)
     if (flagMatches) {
@@ -98,23 +97,19 @@ export async function compress(
 
   const summaryLines: string[] = [
     "## Context Summary (Compressed)",
+    "",
     "### Actions Taken",
+    ...(actions.length > 0 ? actions : ["- No tool calls extracted"]),
+    "",
+    "### Key Findings",
+    ...(flags.length > 0
+      ? [...new Set(flags)].map((f) => `- ${f}`)
+      : ["None extracted"]),
+    "",
+    `### Stats`,
+    `- Older messages compressed: ${older.length}`,
+    `- Recent messages preserved: ${recent.length}`,
   ]
-
-  if (actions.length > 0) {
-    summaryLines.push(...actions)
-  } else {
-    summaryLines.push("- No tool calls extracted")
-  }
-
-  summaryLines.push("### Key Findings")
-
-  if (flags.length > 0) {
-    const unique = [...new Set(flags)]
-    summaryLines.push(...unique.map((f) => `- ${f}`))
-  } else {
-    summaryLines.push("None extracted")
-  }
 
   const summary = summaryLines.join("\n")
   const tokensSaved = Math.max(0, estimateTokens(oldTexts.join("\n")) - estimateTokens(summary))
