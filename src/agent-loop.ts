@@ -77,7 +77,7 @@ export interface AgentLoopOptions {
   onToken?: (token: string) => void;
   onToolCall?: (tool: string, args: unknown) => void;
   onToolCallAsync?: (tool: string, args: unknown) => Promise<AgentLoopResult | void>;
-  onFlag?: (flag: string) => void;
+  onFlag?: (flag: string) => void | Promise<void>;
   abortSignal?: AbortSignal;
   /** Pause controller for REPL mode. When provided, the loop pauses after maxStepsPerRun iterations. */
   pauseController?: PauseController;
@@ -116,8 +116,8 @@ export async function runAgentLoop(
   const harness = new Harness(options.harnessConfig);
   const memoryConfig = { ...DEFAULT_MEMORY_CONFIG, ...options.memoryConfig };
 
-  const sessionId = toolContext.sessionId;
-  const sessionDir = path.join(os.homedir(), ".openhack", "sessions");
+  const sessionId = toolContext.sessionId ?? "default";
+  const sessionDir = path.join(os.homedir(), ".openhack", "sessions", sessionId);
 
   let memory: MemoryManager | null = null;
   if (memoryConfig.enabled) {
@@ -134,12 +134,12 @@ export async function runAgentLoop(
   let terminationReason = "";
   let pendingLoopWarning: string | null = null;
 
-  const emitFlags = (text: string) => {
+  const emitFlags = async (text: string) => {
     const found = detectFlags(text);
     for (const f of found) {
       if (!allFlags.has(f)) {
         allFlags.add(f);
-        onFlag?.(f);
+        await onFlag?.(f);
       }
     }
   };
@@ -176,7 +176,7 @@ export async function runAgentLoop(
               const delegateOutput = asyncResult.flags.length > 0
                 ? `Delegation complete. Flags found: ${asyncResult.flags.join(", ")}`
                 : `Delegation complete after ${asyncResult.iterations} iterations (${asyncResult.terminationReason})`;
-              emitFlags(delegateOutput);
+              await emitFlags(delegateOutput);
               shouldTerminate = true;
               terminationReason = "delegation_complete";
               return delegateOutput;
@@ -216,7 +216,7 @@ export async function runAgentLoop(
               `\n...(truncated, ${output.length} total bytes. Use grep/head/tail to get specific parts)`;
           }
           if (output) {
-            emitFlags(output);
+            await emitFlags(output);
           }
           return output;
         },
@@ -238,16 +238,16 @@ export async function runAgentLoop(
     const toolChoice = iteration === 0 ? initialToolChoice : undefined;
 
     const result = streamText({
-      model: provider.languageModel(),
-      system: systemPrompt,
-      messages,
-      tools: aiTools,
-      ...(toolChoice ? { toolChoice } : {}),
-      abortSignal: options.abortSignal,
-      stopWhen: stepCountIs(Math.min(maxIterations - iteration, 10)),
-      onStepFinish: async ({ response: stepResponse }) => {
-        iteration++;
-        stepMessages = stepResponse.messages;
+        model: provider.languageModel(),
+        system: systemPrompt,
+        messages,
+        tools: aiTools,
+        ...(toolChoice ? { toolChoice } : {}),
+        abortSignal: options.abortSignal,
+        stopWhen: stepCountIs(1),
+        onStepFinish: async ({ response: stepResponse }) => {
+          iteration++;
+          stepMessages = stepResponse.messages;
 
         if (harness && memory) {
           const loopResult = harness.checkLoop(stepResponse.messages);
@@ -298,19 +298,40 @@ export async function runAgentLoop(
           .join(" ");
         if (fullText) {
           stepFullText = fullText;
-          emitFlags(fullText);
+          await emitFlags(fullText);
         }
       },
     });
 
-    for await (const part of result.fullStream) {
-      if (part.type === "text-delta") {
-        onToken?.(part.text);
+    try {
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          onToken?.(part.text);
+        }
       }
-    }
 
-    const response = await result.response;
-    messages = response.messages;
+      const response = await result.response;
+      messages = response.messages;
+    } catch (err: unknown) {
+      const errName = (err as Error).name;
+      // AbortError is expected when user stops
+      if (errName === "AbortError") {
+        shouldTerminate = true;
+        terminationReason = "user_abort";
+        break;
+      }
+      // Log the error and continue with what we have
+      const errMsg = (err as Error).message || String(err);
+      if (memory) {
+        await memory.appendLog(`LLM error at iteration ${iteration}: ${errMsg}`);
+      }
+      // If we have no messages to continue with, terminate
+      if (messages.length === 0) {
+        shouldTerminate = true;
+        terminationReason = `llm_error: ${errMsg}`;
+      }
+      continue;
+    }
 
     // Apply sliding window trim if messages are too long
     const trimmedCount = messages.length;

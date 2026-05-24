@@ -1,5 +1,3 @@
-import * as os from "node:os";
-import * as path from "node:path";
 import type { ModelMessage } from "ai";
 import type { AgentDef, DelegateRequest } from "./types.js";
 import type { Provider } from "../llm/provider.js";
@@ -30,7 +28,8 @@ export interface AgentRunContext {
   onDelegate?: (req: DelegateRequest) => Promise<AgentLoopResult>;
   onToken?: (token: string) => void;
   onToolCall?: (tool: string, args: unknown) => void;
-  onFlag?: (flag: string) => void;
+  onFlag?: (flag: string) => void | Promise<void>;
+  abortSignal?: AbortSignal;
 }
 
 export function buildPermissionCheck(
@@ -97,6 +96,7 @@ export async function runAgent(ctx: AgentRunContext): Promise<AgentLoopResult> {
     onToken,
     onToolCall,
     onFlag,
+    abortSignal,
     mcpLifecycle,
   } = ctx;
 
@@ -125,20 +125,18 @@ export async function runAgent(ctx: AgentRunContext): Promise<AgentLoopResult> {
   };
 
   const delegateInterceptor = onDelegate
-    ? async (tool: string, rawArgs: unknown) => {
-        onToolCall?.(tool, rawArgs);
-        if (tool === "delegate" && onDelegate) {
+    ? async (tool: string, rawArgs: unknown): Promise<AgentLoopResult | void> => {
+        if (tool === "delegate") {
           const args = rawArgs as { targetAgent: string; objective: string; context?: string };
           const req: DelegateRequest = {
             targetAgent: args.targetAgent,
             objective: args.objective,
             context: args.context ?? "",
           };
-          const result = await onDelegate(req);
-          return result;
+          return onDelegate(req);
         }
       }
-    : onToolCall;
+    : undefined;
 
   const maxIterations = agentDef.maxSteps ?? config.agent.maxSteps;
 
@@ -154,7 +152,9 @@ export async function runAgent(ctx: AgentRunContext): Promise<AgentLoopResult> {
     memoryConfig: ctx.memoryConfig ?? config.memory,
     initialObjective,
     onToken,
-    onToolCall: typeof delegateInterceptor === "function" ? delegateInterceptor : onToolCall,
+    onToolCall,
+    onToolCallAsync: delegateInterceptor,
     onFlag,
+    abortSignal,
   });
 }

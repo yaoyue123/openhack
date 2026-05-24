@@ -32,6 +32,7 @@ export interface SolveOptions {
   mcpLifecycle: MCPLifecycle;
   session?: Session;
   callbacks: SolveCallbacks;
+  abortSignal?: AbortSignal;
 }
 
 export async function runSolve(options: SolveOptions): Promise<{
@@ -51,6 +52,7 @@ export async function runSolve(options: SolveOptions): Promise<{
     agentRegistry,
     mcpLifecycle,
     callbacks,
+    abortSignal,
   } = options;
 
   const agent = options.agentName
@@ -91,7 +93,7 @@ export async function runSolve(options: SolveOptions): Promise<{
 
   const userMessage = `Solve this CTF challenge using the ${agent.name} agent.${challengeContext}\n\nIMPORTANT: Do NOT read challenge.json for the answer. Analyze the actual challenge files to find the flag.`;
 
-  const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
+  const memoryDir = path.join(os.homedir(), ".openhack", "sessions", session.id);
 
   const collectFlagsAndSave = async (flags: string[]) => {
     for (const f of flags) {
@@ -123,6 +125,7 @@ export async function runSolve(options: SolveOptions): Promise<{
       skillRegistry,
       memoryDir,
       mcpLifecycle,
+      abortSignal,
       initialObjective: `${req.objective}\n\n## Triage Context\n${req.context}`,
       onToken: callbacks.onToken,
       onToolCall: (tool, a) => {
@@ -145,6 +148,7 @@ export async function runSolve(options: SolveOptions): Promise<{
       skillRegistry,
       memoryDir,
       mcpLifecycle,
+      abortSignal,
       initialObjective: userMessage,
       onDelegate: agent.mode === "primary" ? delegateHandler : undefined,
       onToken: callbacks.onToken,

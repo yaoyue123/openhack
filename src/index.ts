@@ -20,6 +20,7 @@ import { SessionStore } from "./session/store.js";
 import { SkillRegistry } from "./skill/registry.js";
 import { ConfigLoader, stripJsoncComments } from "./config/loader.js";
 import { MCPLifecycle } from "./mcp/lifecycle.js";
+import { MemoryManager } from "./memory/index.js";
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce((o: unknown, k: string) => {
@@ -104,6 +105,14 @@ const cli = yargs(hideBin(process.argv))
 
         const provider = createProvider(llmConfig);
         const registry = ToolRegistry.createBuiltin();
+        const skillRegistry = await SkillRegistry.create(process.cwd());
+        const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
+        const memoryManager = new MemoryManager(memoryDir);
+        await memoryManager.ensureDir();
+        const skillContent = skillRegistry.toPromptWithCompanions("general");
+        const systemPrompt = skillContent
+          ? getSystemPrompt("general", skillContent)
+          : getSystemPrompt("general");
         const toolContext: ToolContext = {
           workingDir: process.cwd(),
           sessionId: "cli",
@@ -114,9 +123,10 @@ const cli = yargs(hideBin(process.argv))
           await runAgentLoop({
             provider,
             messages: [{ role: "user", content: message }],
-            system: getSystemPrompt("general"),
+            system: systemPrompt,
             tools: registry,
             toolContext,
+            memoryConfig: config.memory,
             maxIterations: config.agent.maxSteps,
             onToken: (token) => process.stdout.write(token),
             onToolCall: (tool, a) => {
@@ -181,6 +191,13 @@ const cli = yargs(hideBin(process.argv))
           permissionCheck: async () => true,
         };
 
+        const ac = new AbortController();
+        const timeoutMs = (config.agent.timeout ?? 300) * 1000;
+        const timeoutId = setTimeout(() => {
+          ac.abort();
+          process.stdout.write(`\n[Timeout] Solve aborted after ${config.agent.timeout ?? 300}s\n`);
+        }, timeoutMs);
+
         try {
           const result = await runSolve({
             workDir,
@@ -193,6 +210,7 @@ const cli = yargs(hideBin(process.argv))
             skillRegistry,
             agentRegistry,
             mcpLifecycle,
+            abortSignal: ac.signal,
             callbacks: {
               onToken: (token) => process.stdout.write(token),
               onToolCall: (tool, _a) => process.stdout.write(`\n[tool: ${tool}]\n`),
@@ -200,8 +218,10 @@ const cli = yargs(hideBin(process.argv))
             },
           });
 
+          clearTimeout(timeoutId);
           process.stdout.write(`\nSession: ${result.session.id} (${result.session.state})\n`);
         } catch (err: unknown) {
+          clearTimeout(timeoutId);
           const error = err instanceof Error ? err : new Error(String(err));
           console.error(`\nError: ${error.message || error}`);
           if (error.cause) console.error(`Cause: ${error.cause}`);
@@ -259,6 +279,7 @@ const cli = yargs(hideBin(process.argv))
       }
 
       const runtime = createAppRuntime(process.cwd());
+      const mcpLifecycle = new MCPLifecycle();
       try {
         const config = await runtime.runPromise(
           Effect.flatMap(ConfigService, (svc) => svc.get()),
@@ -272,6 +293,12 @@ const cli = yargs(hideBin(process.argv))
           sessionId: session.id,
           permissionCheck: async () => true,
         };
+
+        // Start MCP servers and register their tools
+        const allMcpTools = await mcpLifecycle.startAll(config);
+        for (const mcpTool of allMcpTools) {
+          registry.register(mcpTool);
+        }
 
         const agentName = session.agentHistory.at(-1) ?? "triage";
         const agent = getAgent(agentName);
@@ -307,8 +334,22 @@ const cli = yargs(hideBin(process.argv))
         });
         process.stdout.write("\n");
       } finally {
+        await mcpLifecycle.stopAll().catch(() => {});
         await runtime.dispose();
       }
+    },
+  )
+  .command(
+    "session delete <id>",
+    "Delete a saved session",
+    () => {},
+    async (args) => {
+      const deleted = await SessionStore.delete(args.id as string);
+      if (!deleted) {
+        console.error(`Session not found: ${args.id}`);
+        process.exit(1);
+      }
+      console.log(`Deleted session: ${args.id}`);
     },
   )
   .command(
@@ -434,7 +475,7 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     "$0",
-    false as any,
+    false as const,
     () => {},
     async () => {
       const runtime = createAppRuntime(process.cwd());
@@ -471,7 +512,6 @@ const cli = yargs(hideBin(process.argv))
         const { startREPL } = await import("./repl/index.js");
         const { getToolStatus } = await import("./repl/types.js");
         const { PauseController } = await import("./agent/pause-controller.js");
-        const { MemoryManager } = await import("./memory/index.js");
 
         // Shared memory manager for reading phase info
         const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
@@ -479,7 +519,7 @@ const cli = yargs(hideBin(process.argv))
         await memoryManager.ensureDir();
 
         const handle = startREPL({
-          onSubmit: async (message: string) => {
+          onSubmit: async (message: string, _slashCtx: import("./repl/slash-commands.js").SlashContext | null) => {
             messageHistory.push({ role: "user", content: message });
 
             abortController = new AbortController();
@@ -565,7 +605,7 @@ const cli = yargs(hideBin(process.argv))
                     session.agentHistory.push(targetAgent);
                     await SessionStore.save(session);
 
-                    const { runAgent } = await import("./agent/runtime.js");
+                    // runAgent is already statically imported at top of file
                     const memoryDir = path.join(os.homedir(), ".openhack", "sessions");
                     const mcpLifecycle = new MCPLifecycle();
 
