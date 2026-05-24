@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { defineTool } from "./define.js";
+import { resolveSecurePath, PathTraversalError, checkPermission } from "./security.js";
 
 export const EditTool = defineTool({
   id: "edit",
@@ -28,9 +29,12 @@ export const EditTool = defineTool({
     },
     required: ["filePath", "oldString", "newString"],
   },
-  execute: async (args) => {
+  execute: async (args, ctx) => {
+    const permDenied = await checkPermission(ctx, "edit", args.filePath);
+    if (permDenied) return permDenied;
     try {
-      const content = await readFile(args.filePath, "utf-8");
+      const safePath = resolveSecurePath(args.filePath, ctx.workingDir);
+      const content = await readFile(safePath, "utf-8");
       const { oldString, newString, replaceAll } = args;
 
       let count = 0;
@@ -44,7 +48,7 @@ export const EditTool = defineTool({
 
       if (count === 0) {
         return {
-          output: `No matches found for the specified string in ${args.filePath}`,
+          output: `No matches found for the specified string in ${safePath}`,
           error: true,
         };
       }
@@ -60,13 +64,14 @@ export const EditTool = defineTool({
         ? content.split(oldString).join(newString)
         : content.replace(oldString, newString);
 
-      await writeFile(args.filePath, newContent, "utf-8");
+      await writeFile(safePath, newContent, "utf-8");
       const replaced = replaceAll ? count : 1;
       return {
-        output: `Replaced ${replaced} occurrence(s) in ${args.filePath}`,
+        output: `Replaced ${replaced} occurrence(s) in ${safePath}`,
       };
-    } catch (err: any) {
-      return { output: err.message || "Failed to edit file", error: true };
+    } catch (err: unknown) {
+      const message = err instanceof PathTraversalError ? err.message : (err as Error)?.message || "Failed to edit file";
+      return { output: message, error: true };
     }
   },
 });

@@ -1,5 +1,6 @@
 import { execa } from "execa";
 import { defineTool } from "./define.js";
+import { checkPermission } from "./security.js";
 
 export const GrepTool = defineTool({
   id: "grep",
@@ -25,6 +26,8 @@ export const GrepTool = defineTool({
   },
   execute: async (args, ctx) => {
     const searchPath = args.path || ctx.workingDir;
+    const permDenied = await checkPermission(ctx, "grep", `${args.pattern} in ${searchPath}`);
+    if (permDenied) return permDenied;
     const grepArgs = ["-rn", "--color=never", "-E", args.pattern];
 
     if (args.include) {
@@ -53,8 +56,9 @@ export const GrepTool = defineTool({
 
       const lines = result.stdout.split("\n").filter(Boolean).slice(0, 200);
       return { output: lines.join("\n") };
-    } catch (err: any) {
-      return { output: err.message || "Grep search failed", error: true };
+    } catch (err: unknown) {
+      const message = (err as Error).message || "Grep search failed";
+      return { output: message, error: true };
     }
   },
 });

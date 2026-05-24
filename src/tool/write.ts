@@ -1,6 +1,7 @@
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { defineTool } from "./define.js";
+import { resolveSecurePath, PathTraversalError, checkPermission } from "./security.js";
 
 export const WriteTool = defineTool({
   id: "write",
@@ -19,14 +20,18 @@ export const WriteTool = defineTool({
     },
     required: ["filePath", "content"],
   },
-  execute: async (args) => {
+  execute: async (args, ctx) => {
+    const permDenied = await checkPermission(ctx, "write", args.filePath);
+    if (permDenied) return permDenied;
     try {
-      await mkdir(dirname(args.filePath), { recursive: true });
-      await writeFile(args.filePath, args.content, "utf-8");
+      const safePath = resolveSecurePath(args.filePath, ctx.workingDir);
+      await mkdir(dirname(safePath), { recursive: true });
+      await writeFile(safePath, args.content, "utf-8");
       const bytes = Buffer.byteLength(args.content, "utf-8");
-      return { output: `Wrote ${bytes} bytes to ${args.filePath}` };
-    } catch (err: any) {
-      return { output: err.message || "Failed to write file", error: true };
+      return { output: `Wrote ${bytes} bytes to ${safePath}` };
+    } catch (err: unknown) {
+      const message = err instanceof PathTraversalError ? err.message : (err as Error)?.message || "Failed to write file";
+      return { output: message, error: true };
     }
   },
 });

@@ -1,4 +1,5 @@
 import { defineTool } from "./define.js";
+import { checkPermission } from "./security.js";
 
 export const WebFetchTool = defineTool({
   id: "webfetch",
@@ -17,7 +18,10 @@ export const WebFetchTool = defineTool({
     },
     required: ["url"],
   },
-  execute: async (args) => {
+  execute: async (args, ctx) => {
+    const permDenied = await checkPermission(ctx, "webfetch", args.url);
+    if (permDenied) return permDenied;
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
 
@@ -47,8 +51,9 @@ export const WebFetchTool = defineTool({
           : content,
         metadata: truncated ? { truncated: true } : undefined,
       };
-    } catch (err: any) {
-      return { output: err.message || "Failed to fetch URL", error: true };
+    } catch (err: unknown) {
+      const message = (err as Error).message || "Failed to fetch URL";
+      return { output: message, error: true };
     } finally {
       clearTimeout(timeout);
     }
