@@ -4,8 +4,24 @@ import { checkPermission } from "./security.js";
 
 export const GrepTool = defineTool({
   id: "grep",
-  description:
+  description: [
     "Search file contents using a regular expression pattern via grep.",
+    "",
+    "WHEN TO USE:",
+    "  - Finding specific strings in challenge files: grep('password', './challenge/')",
+    "  - Searching for patterns: grep('flag\\{', './'), grep('TODO|FIXME|HACK', './src/')",
+    "  - Filtering by file type: grep('secret', './', include='*.py')",
+    "",
+    "LIMITATIONS:",
+    "  - Returns at most 200 matching lines",
+    "  - Uses extended regex (-E flag) — use ERE syntax, not PCRE",
+    "  - Does not search file names — use glob for that",
+    "",
+    "ALTERNATIVES:",
+    "  - For finding files by name: use glob tool",
+    "  - For complex text processing: use python with re module",
+    "  - For searching binary files: use bash with strings | grep, or python",
+  ].join("\n"),
   parameters: {
     type: "object",
     properties: {

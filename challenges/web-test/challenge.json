@@ -1,0 +1,6 @@
+{
+  "name": "Bugku Web - Cookie Deserialization",
+  "category": "web",
+  "description": "Target URL: http://160.202.248.161:14456 - A PHP login page that uses cookie-based PHP deserialization. The flag is hidden behind a cookie check. Investigate the page source, CSS files, and any hints to find the vulnerability.",
+  "url": "http://160.202.248.161:14456"
+}

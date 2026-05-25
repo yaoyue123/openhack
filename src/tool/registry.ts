@@ -15,6 +15,8 @@ import { MemoryWriteTool } from "./memory-write.js";
 import { DelegateTool } from "./delegate.js";
 import { ReflectTool } from "./reflect.js";
 import { GitTool } from "./git.js";
+import { PycAnalyzeTool } from "./pyc-analyze.js";
+import { SkillQueryTool } from "./skill-query.js";
 
 export class ToolRegistry {
   private tools: Map<string, ToolDef> = new Map();
@@ -31,10 +33,12 @@ export class ToolRegistry {
       WebFetchTool,
       FlagTool,
       PythonTool,
+      PycAnalyzeTool,
       StateReadTool,
       StateWriteTool,
       MemoryQueryTool,
       MemoryWriteTool,
+      SkillQueryTool,
       DelegateTool,
       ReflectTool,
       GitTool,

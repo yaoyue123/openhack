@@ -42,14 +42,14 @@ describe("ConfigLoader", () => {
   it("has default agent config", async () => {
     const loader = new ConfigLoader("/tmp/nonexistent_path_xyz");
     const config = await loader.load();
-    expect(config.agent.maxSteps).toBe(25);
+    expect(config.agent.maxSteps).toBe(40);
     expect(config.agent.timeout).toBe(300);
   });
 
   it("has default skills config", async () => {
     const loader = new ConfigLoader("/tmp/nonexistent_path_xyz");
     const config = await loader.load();
-    expect(config.skills.maxCompanionBytes).toBe(15000);
+    expect(config.skills.maxCompanionBytes).toBe(30000);
   });
 
   it("reads config from file", async () => {
@@ -107,7 +107,7 @@ describe("ConfigLoader", () => {
     const config = await loader.load();
     expect(config.llm.model).toBe("custom-model");
     expect(config.llm.baseURL).toBe("http://localhost:11434/v1");
-    expect(config.agent.maxSteps).toBe(25);
+    expect(config.agent.maxSteps).toBe(40);
   });
 
   it("reads JSONC with comments", async () => {

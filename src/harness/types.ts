@@ -43,7 +43,23 @@ export interface HarnessConfig {
   loop: LoopGuardConfig;
   budget: BudgetConfig;
   terminator: TerminatorConfig;
+  response?: Partial<ResponseGuardConfig>;
 }
+
+export interface ResponseGuardConfig {
+  windowSize: number;
+  maxIdenticalOutputs: number;
+}
+
+export interface ResponseGuardResult {
+  isStuck: boolean;
+  suggestion?: string;
+}
+
+export const DEFAULT_RESPONSE_GUARD_CONFIG: ResponseGuardConfig = {
+  windowSize: 8,
+  maxIdenticalOutputs: 3,
+};
 
 export const DEFAULT_HARNESS_CONFIG: HarnessConfig = {
   loop: {

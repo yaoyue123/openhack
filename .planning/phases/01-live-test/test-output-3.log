@@ -1,0 +1,32 @@
+﻿npx.cmd : openhack solve [path..]
+所在位置 行:1 字符: 1
++ & "D:\APP\nodejs\npx.cmd" tsx src/index.ts solve "challenges/简单的rsa"  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (openhack solve [path..]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+Auto-triage and solve a challenge
+
+Options:
+  --help      Show help                                                [boolean]
+  --version   Show version number                                      [boolean]
+  --category  Skip triage, use specific category agent                  [string]
+  --agent     Use specific agent by name                                [string]
+  --model                                          [string] [default: "default"]
+
+(FiberFailure) Error: Failed to load config: Error: Config validation failed:
+  - permissions.default: Invalid input: expected array, received string
+  - permissions.rules: Invalid input: expected array, received string
+    at catch (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\src\runtime\app.ts:19:25)
+    at C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\core-effect.ts:1683:29
+    at <anonymous> (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\fiberRuntime.ts:1161:41)
+    at body (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\Utils.ts:786:14)
+    at FiberRuntime.Sync (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\fiberRuntime.ts:1161:19
+)
+    at <anonymous> (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\fiberRuntime.ts:1398:53)
+    at f (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\tracer.ts:101:19)
+    at runLoop (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\fiberRuntime.ts:1384:34)
+    at evaluateEffect (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\fiberRuntime.ts:950:27)
+    at evaluateMessageWhileSuspended (C:\Users\a402-3\Desktop\娴嬭瘯\openhack\node_modules\effect\src\internal\fiberRuntim
+e.ts:918:14)

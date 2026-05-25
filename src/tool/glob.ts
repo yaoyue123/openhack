@@ -4,7 +4,22 @@ import { checkPermission } from "./security.js";
 
 export const GlobTool = defineTool({
   id: "glob",
-  description: "Find files matching a glob pattern.",
+  description: [
+    "Find files matching a glob pattern.",
+    "",
+    "WHEN TO USE:",
+    "  - Finding challenge files: glob('**/*.pcap'), glob('**/*.py'), glob('**/*.bin')",
+    "  - Exploring directory structure: glob('*'), glob('**/*')",
+    "  - Finding specific file types: glob('**/*.php'), glob('**/*.{js,ts,json}')",
+    "",
+    "LIMITATIONS:",
+    "  - Only matches file NAMES, not file contents — use grep to search inside files",
+    "  - Does not read file contents — use read tool after finding files",
+    "",
+    "ALTERNATIVES:",
+    "  - For searching file contents: use grep tool",
+    "  - For complex file operations: use bash with find command (but glob is usually faster)",
+  ].join("\n"),
   parameters: {
     type: "object",
     properties: {

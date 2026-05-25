@@ -70,12 +70,18 @@ export async function buildAgentSystemPrompt(
   // Add agent-specific instructions on top
   prompt += `\n\n## Agent-Specific Instructions\n\n${agentDef.basePrompt}`;
 
-  // Inject skill knowledge
+  // Inject skill knowledge using two-tier architecture:
+  // Tier 1: Skill SKILL.md body + compact index of companion files (always present)
+  // Tier 2: On-demand retrieval via skill-query tool (no budget limit)
   if (agentDef.skills.length > 0) {
     for (const skillName of agentDef.skills) {
-      const skillContent = skillRegistry.toPromptWithCompanions(skillName);
-      if (skillContent) {
-        prompt += `\n\n${skillContent}`;
+      const skillBody = skillRegistry.toPrompt(skillName);
+      if (skillBody) {
+        prompt += `\n\n${skillBody}`;
+      }
+      const index = skillRegistry.buildIndex(skillName);
+      if (index) {
+        prompt += `\n\n${index}`;
       }
     }
   }
@@ -122,6 +128,8 @@ export async function runAgent(ctx: AgentRunContext): Promise<AgentLoopResult> {
       const action = permissionCheck(tool, target);
       return action !== "deny";
     },
+    skillRegistry,
+    activeSkills: agentDef.skills,
   };
 
   const delegateInterceptor = onDelegate

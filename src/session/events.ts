@@ -11,5 +11,6 @@ export type HackEvent =
   | { type: "HARNESS_TERMINATED"; reason: string; iteration: number }
   | { type: "STATE_UPDATED"; phase: string }
   | { type: "MEMORY_FILE_WRITTEN"; file: string; bytesWritten: number }
+  | { type: "SYSTEM_MESSAGE"; message: string }
 
 export type EventCallback = (event: HackEvent) => void

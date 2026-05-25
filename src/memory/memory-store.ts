@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 
-const VALID_NAMES = new Set(["findings", "failed-paths", "attack-log", "experience"])
+const VALID_NAMES = new Set(["findings", "failed-paths", "attack-log", "experience", "attack-plan", "extracted-values"])
 
 export class MemoryStore {
   private readonly memoryDir: string

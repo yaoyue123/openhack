@@ -53,18 +53,18 @@ export const DockerConfigSchema = z.object({
 export type DockerConfig = z.infer<typeof DockerConfigSchema>;
 
 export const AgentConfigSchema = z.object({
-  maxSteps: z.number().int().positive().default(25),
+  maxSteps: z.number().int().positive().default(40),
   timeout: z.number().int().positive().default(300),
 });
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
 export const SkillsConfigSchema = z.object({
-  maxCompanionBytes: z.number().int().positive().default(15000),
+  maxCompanionBytes: z.number().int().positive().default(30000),
 });
 export type SkillsConfig = z.infer<typeof SkillsConfigSchema>;
 
 export const TerminatorConfigSchema = z.object({
-  maxStepsWithoutProgress: z.number().int().nonnegative().default(10),
+  maxStepsWithoutProgress: z.number().int().nonnegative().default(15),
 });
 
 export const LoopConfigSchema = z.object({
@@ -134,7 +134,7 @@ export const DEFAULT_CONFIG: OpenhackConfig = {
     maxDelayMs: 30000,
   },
   agent: {
-    maxSteps: 25,
+    maxSteps: 40,
     timeout: 300,
   },
   harness: {
@@ -153,7 +153,7 @@ export const DEFAULT_CONFIG: OpenhackConfig = {
       minPreservePairs: 10,
     },
     terminator: {
-      maxStepsWithoutProgress: 10,
+      maxStepsWithoutProgress: 15,
     },
   },
   memory: {
@@ -161,7 +161,7 @@ export const DEFAULT_CONFIG: OpenhackConfig = {
     autoLog: true,
   },
   skills: {
-    maxCompanionBytes: 15000,
+    maxCompanionBytes: 30000,
   },
   permissions: {
     default: ["ask"],

@@ -1,7 +1,13 @@
+import type { SkillRegistry } from "../skill/registry.js";
+
 export interface ToolContext {
   workingDir: string;
   sessionId: string;
   permissionCheck: (tool: string, pattern: string) => Promise<boolean>;
+  /** Skill registry for on-demand knowledge retrieval (skill-query tool). */
+  skillRegistry?: SkillRegistry;
+  /** Skill names available to the current agent (for skill-query scoping). */
+  activeSkills?: string[];
 }
 
 export interface ToolDef {

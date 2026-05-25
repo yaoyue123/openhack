@@ -44,12 +44,14 @@ Use these alternatives:
 ## Working with Python .pyc Files
 
 If the challenge contains .pyc (Python compiled bytecode) files:
-1. Use the \`read\` tool on .pyc files — it auto-detects binary content and displays a hex dump
-2. For decompilation: write a Python script using \`xdis\` to extract constants and code objects:
-   - \`from xdis import load_module; import marshal; ...\`
-   - Extract constants from bytecode: \`code.co_consts\`, \`code.co_names\`, \`code.co_code\`
-3. For full decompilation: try \`python -m uncompyle6 file.pyc\` (may not work for Python 3.9+)
-4. The constants in .pyc files typically contain crypto keys, primes (p,q), ciphertext, or flag data
+1. Use the \`python\` tool with xdis library to extract constants and variable names
+2. Your skill knowledge contains ready-to-use template scripts — copy them and adapt the file path
+3. DO NOT use \`read\` on .pyc files (returns hex dump, not useful for analysis)
+4. After extracting p, q, e, c values from .pyc, write a Python decryption script:
+   - Standard RSA: \`m = pow(c, pow(e, -1, (p-1)*(q-1)), p*q)\`
+   - Convert to bytes: \`bytes.fromhex(hex(m)[2:])\`
+   - If result is base64: \`import base64; base64.b64decode(result)\`
+5. Submit the flag using the \`flag\` tool
 
 ## Methodology
 
@@ -64,7 +66,7 @@ Per-category:
 - crypto: Python for decryption. Use pycryptodome, sympy. For .pyc: decompile or extract constants with xdis. Never manual XOR/shift.
 - rev: Use python for hex/binary analysis, read tool for hex dumps. Focus on main/validation logic.
 - forensics: Python+scapy for pcap, strings/extraction via python
-- web: Use python for network requests if curl unavailable
+- web: Use webfetch for initial recon (supports custom method/headers/cookies). For complex HTTP attacks (multi-step, cookie manipulation, raw sockets), use bash+curl or python+requests. Analyze source code BEFORE constructing payloads.
 - misc: Python for base64/hex/rot13, jail escapes
 - pwn: Use pwntools via python tool
 

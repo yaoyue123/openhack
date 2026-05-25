@@ -4,6 +4,14 @@ description: Provides web exploitation techniques for CTF challenges. Use when t
 license: MIT
 compatibility: Requires filesystem-based agent (Claude Code or similar) with bash, Python 3, and internet access for tool installation.
 allowed-tools: Bash Read Write Edit Glob Grep Task WebFetch WebSearch
+priority-files:
+  - server-side-deser.md
+  - sql-injection.md
+  - auth-jwt.md
+  - server-side.md
+  - server-side-exec.md
+  - client-side.md
+  - field-notes.md
 metadata:
   user-invocable: "false"
 ---
@@ -101,6 +109,41 @@ curl "https://target.com/page?name={{config}}"
 # Request inspection
 curl -v -X POST https://target.com/api -H "Content-Type: application/json" -d '{}'
 ```
+
+## PHP Deserialization Quick Reference
+
+When you see \`unserialize($input)\` in PHP source code:
+
+1. **String serialization**: \`s:LEN:"VALUE";\` — count length carefully!
+2. **Integer**: \`i:123;\`
+3. **Boolean**: \`b:1;\` or \`b:0;\`
+4. **Array**: \`a:COUNT:{KEY;VALUE;...}\`
+5. **Object**: \`O:LEN:"CLASSNAME":COUNT:{PROPNAME;PROPVALUE;...}\`
+
+**Cookie exploit example:**
+```bash
+# If code is: unserialize($_COOKIE['auth']) === "secret_value"
+# Construct: s:13:"secret_value";  (length must match exactly)
+# URL-encode the serialized value for the Cookie header:
+curl -s -H "Cookie: auth=s%3A13%3A%22secret_value%22%3B" http://target/
+```
+
+**Critical pitfalls:**
+- String length in \`s:N:"...";\` MUST match actual character count (e.g., "ctf.bugku.com" = 13, not 12)
+- Cookie values with \`;\` or \`"\` need URL-encoding
+- \`unserialize()\` returns \`false\` on malformed input — check response length changes
+
+## Web Challenge Attack Patterns
+
+| Source Code Clue | Attack Vector | Tool |
+|---|---|---|
+| \`unserialize()\` | PHP deserialization | webfetch with Cookie header, or bash+curl |
+| CSS/HTML comments with hints | Parameter discovery | webfetch, read source carefully |
+| Login form with no CSRF | Brute force, SQLi auth bypass | bash+curl or webfetch POST |
+| \`include($_GET[...])\` | LFI/RFI | webfetch with path parameter |
+| JWT in cookie/header | JWT manipulation | python (pyjwt) |
+| Template engine errors | SSTI | webfetch with template payload |
+| File upload | Upload bypass, webshell | bash+curl with multipart POST |
 
 ## First Questions to Answer
 

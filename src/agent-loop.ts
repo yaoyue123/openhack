@@ -11,6 +11,7 @@ import { estimateTokens } from "./llm/token-counter.js";
 import { detectFlags } from "./tool/flag.js";
 import { evaluate, type PermissionAction } from "./permission/evaluate.js";
 import { Harness } from "./harness/index.js";
+import type { ExtractedValue } from "./harness/value-extractor.js";
 import { MemoryManager } from "./memory/index.js";
 import { DEFAULT_HARNESS_CONFIG } from "./harness/types.js";
 import { DEFAULT_MEMORY_CONFIG } from "./memory/types.js";
@@ -53,6 +54,15 @@ function trimMessages(
   const keepFrom = nextIsAssistant ? cutoffIndex - 1 : cutoffIndex;
 
   return messages.slice(keepFrom);
+}
+
+/**
+ * Detect garbled DSML output from models that fail function calling.
+ * DeepSeek models sometimes emit proprietary ＜｜DSML｜ tags instead of proper tool calls.
+ * Matches fullwidth and ASCII variations: ＜｜DSML｜, <|DSML|, ＜|DSML|, <｜DSML｜
+ */
+function isGarbledDSML(text: string): boolean {
+  return /＜｜DSML｜|<\|DSML\||＜\|DSML\||<｜DSML｜/u.test(text);
 }
 
 function getTargetPattern(toolId: string, args: Record<string, any>): string {
@@ -129,6 +139,7 @@ export async function runAgentLoop(
   }
 
   const allFlags = new Set<string>();
+  const allExtractedValues: ExtractedValue[] = [];
   let iteration = 0;
   let shouldTerminate = false;
   let terminationReason = "";
@@ -150,12 +161,22 @@ export async function runAgentLoop(
       const state = await memory.readState();
       const findings = await memory.readFile("findings");
       const failedPaths = await memory.readFile("failed-paths");
+      const plan = await memory.readFile("attack-plan");
       prompt += `\n\n## Current State\n${state}`;
       if (findings !== "(empty)") {
         prompt += `\n\n## Known Findings\n${findings}`;
       }
       if (failedPaths !== "(empty)") {
         prompt += `\n\n## Failed Paths (DO NOT retry these)\n${failedPaths}`;
+      }
+      if (plan !== "(empty)" && plan.length > 50) {
+        prompt += `\n\n## Attack Plan\n${plan}`;
+      }
+      if (allExtractedValues.length > 0) {
+        const formatted = harness.valueExtractor.formatAsMarkdown(allExtractedValues);
+        if (formatted) {
+          prompt += `\n\n## Extracted Values (auto-extracted from tool outputs)\n${formatted}`;
+        }
       }
     }
     return prompt;
@@ -207,16 +228,53 @@ export async function runAgentLoop(
               }
             }
           }
-          const result = await tool.execute(args, toolContext);
-          onEvent?.({ type: "TOOL_EXEC", tool: tool.id, args: Object.values(args).map(String), exitCode: 0 });
+           const result = await tool.execute(args, toolContext);
+
+          // Special handling: skill-query needs the skill registry
           let output = result.output ?? "";
+          if (tool.id === "skill-query" && toolContext.skillRegistry && toolContext.activeSkills) {
+            const topics = args.topics as string[] | undefined;
+            if (topics && Array.isArray(topics) && topics.length > 0) {
+              let queryResult = "";
+              for (const skillName of toolContext.activeSkills) {
+                const section = toolContext.skillRegistry.query(skillName, topics);
+                if (section) {
+                  queryResult += (queryResult ? "\n\n---\n\n" : "") + section;
+                }
+              }
+              output = queryResult || `No matching knowledge found for topics: ${topics.join(", ")}. Try different keywords or check the skill index in your system prompt.`;
+            }
+          }
           if (output.length > 10000) {
             output =
               output.slice(0, 10000) +
               `\n...(truncated, ${output.length} total bytes. Use grep/head/tail to get specific parts)`;
           }
+          onEvent?.({ type: "TOOL_EXEC", tool: tool.id, args: Object.values(args).map(String), exitCode: 0 });
           if (output) {
             await emitFlags(output);
+
+            // Response stuck detection
+            if (harness) {
+              const responseResult = harness.checkResponse(tool.id, output);
+              if (responseResult.isStuck && responseResult.suggestion) {
+                if (!pendingLoopWarning) {
+                  pendingLoopWarning = responseResult.suggestion;
+                }
+              }
+            }
+
+            // Auto-extract values from tool output
+            if (harness && output.length > 50) {
+              const values = harness.extractValues(tool.id, args as Record<string, unknown>, output);
+              for (const v of values) {
+                // Deduplicate by (category, key)
+                const exists = allExtractedValues.some(
+                  e => e.category === v.category && e.key === v.key && e.value === v.value,
+                );
+                if (!exists) allExtractedValues.push(v);
+              }
+            }
           }
           return output;
         },
@@ -250,7 +308,11 @@ export async function runAgentLoop(
           stepMessages = stepResponse.messages;
 
         if (harness && memory) {
-          const loopResult = harness.checkLoop(stepResponse.messages);
+          const loopResult = harness.checkLoop(
+            stepResponse.messages,
+            await memory.readFile("failed-paths").catch(() => null),
+            await memory.readFile("findings").catch(() => null),
+          );
           if (loopResult.isLoop && loopResult.repeatCount >= harness.config.loop.maxRepeats) {
             pendingLoopWarning = loopResult.suggestion ?? null;
             onEvent?.({ type: "LOOP_DETECTED", repeatCount: loopResult.repeatCount, suggestion: loopResult.suggestion ?? "" });
@@ -262,6 +324,17 @@ export async function runAgentLoop(
             shouldTerminate = true;
             terminationReason = termResult.reason ?? "unknown";
             return;
+          }
+
+          // PlanGuard: recommend structured plan after recon phase
+          if (memory) {
+            const planContent = await memory.readFile("attack-plan").catch(() => null);
+            const planResult = harness.checkPlan(stepResponse.messages, planContent);
+            if (planResult.needsPlan && planResult.suggestion) {
+              // Inject plan suggestion as assistant message
+              messages.push({ role: "assistant", content: [{ type: "text", text: planResult.suggestion }] });
+              onEvent?.({ type: "SYSTEM_MESSAGE", message: "PlanGuard: suggesting attack plan creation" });
+            }
           }
 
           const budgetResult = harness.checkBudget(messages);
@@ -286,11 +359,23 @@ export async function runAgentLoop(
         }
 
         if (memory?.store) {
+          // Extract tool call info for better logging
+          const toolCalls = stepResponse.messages
+            .filter((m: ModelMessage) => m.role === "tool")
+            .map((m: ModelMessage) => {
+              const content = typeof m.content === "string" ? m.content : "";
+              const preview = content.slice(0, 80).replace(/\n/g, " ");
+              return preview;
+            });
           const textParts = stepResponse.messages
-            .filter((m: ModelMessage) => typeof m.content === "string")
+            .filter((m: ModelMessage) => typeof m.content === "string" && m.role !== "tool")
             .map((m: ModelMessage) => (m.content as string).slice(0, 100))
             .join("; ");
-          await memory.appendLog(`Step ${iteration}: ${textParts || "(tool call)"}`);
+
+          const logEntry = toolCalls.length > 0
+            ? `Step ${iteration}: [tool result] ${toolCalls.join("; ")}`
+            : `Step ${iteration}: ${textParts || "(no output)"}`;
+          await memory.appendLog(logEntry);
         }
 
         const fullText = stepResponse.messages
@@ -309,6 +394,20 @@ export async function runAgentLoop(
           onToken?.(part.text);
         }
       }
+
+      // --- DSML garbled output detection ---
+      if (isGarbledDSML(stepFullText)) {
+        if (memory) {
+          await memory.appendLog(`DSML garbled output detected at iteration ${iteration}, injecting recovery message`);
+        }
+        // Discard the garbled response; inject a recovery message instead
+        messages.push({
+          role: "user",
+          content: "Your last response contained garbled DSML tags instead of proper tool calls. This is a formatting error. Please retry your request using the standard tool call format. For computations, use the python tool with a `code` parameter.",
+        } as ModelMessage);
+        continue; // skip the rest of this iteration
+      }
+      // --- END DSML detection ---
 
       const response = await result.response;
       messages = response.messages;

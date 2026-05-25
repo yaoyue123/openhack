@@ -1,0 +1,6 @@
+{
+  "name": "简单的RSA",
+  "category": "crypto",
+  "description": "Decrypt the message encrypted with RSA to find the flag. The challenge file is a Python compiled .pyc file containing RSA parameters.",
+  "files": ["简单的RSA.pyc"]
+}

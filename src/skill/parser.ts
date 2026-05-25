@@ -6,6 +6,8 @@ export interface SkillFrontmatter {
   license?: string
   compatibility?: string
   "allowed-tools"?: string
+  /** Priority companion files to include first when injecting skill content. */
+  "priority-files"?: string[]
   metadata?: {
     "user-invocable"?: string
     "argument-hint"?: string

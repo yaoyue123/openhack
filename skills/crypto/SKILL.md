@@ -282,6 +282,71 @@ RC4's second output byte is biased toward `0x00` (probability 1/128 vs 1/256). D
 
 Unpadded RSA: `S(a) * S(b) mod n = S(a*b) mod n`. If oracle blacklists target message, sign its factors and multiply. See [rsa-attacks-2.md](rsa-attacks-2.md#rsa-signature-forgery-via-multiplicative-homomorphism-mma-ctf-2015).
 
+## Analyzing .pyc (Python Compiled Bytecode) Files
+
+When a challenge provides a `.pyc` file, it contains compiled Python bytecode with embedded constants (often RSA parameters). Use the `python` tool with this template:
+
+```python
+from xdis import load_module
+import json, sys
+
+filepath = "PATH_TO_PYC"  # ← replace with actual path
+try:
+    ver, ts, magic, co, *_ = load_module(filepath)
+    consts = []
+    large_ints = []
+    for c in co.co_consts:
+        if isinstance(c, int) and c > 10000:
+            large_ints.append({"name": "?", "value": str(c), "bits": c.bit_length()})
+            consts.append(str(c)[:60])
+        elif isinstance(c, (str, bytes, bool, type(None))):
+            consts.append(repr(c))
+        elif isinstance(c, tuple):
+            consts.append(str(c)[:60])
+
+    names = list(co.co_names)
+    print(f"Python {ver[0]}.{ver[1]}")
+    print(f"Names: {names}")
+    print(f"Constants: {json.dumps(consts, indent=2)}")
+    print(f"Large integers ({len(large_ints)}):")
+    for li in large_ints:
+        print(f"  {li['bits']} bits: {li['value'][:80]}...")
+
+    # Map names to constants by position (common pattern)
+    name_set = set(names)
+    for kw in ['p','q','e','n','c','flag','key','iv']:
+        if kw in name_set:
+            print(f"  Variable '{kw}' likely present")
+except Exception as ex:
+    # Fallback: raw marshal
+    import marshal, struct
+    with open(filepath, 'rb') as f:
+        f.read(16)  # skip header
+        code = marshal.loads(f.read())
+        print(f"Names: {list(code.co_names)}")
+        for c in code.co_consts:
+            if isinstance(c, int) and c > 10000:
+                print(f"  Large int ({c.bit_length()} bits): {str(c)[:80]}")
+            elif isinstance(c, str):
+                print(f"  String: {repr(c)}")
+```
+
+After extracting p, q, e, c, decrypt:
+```python
+p = ...; q = ...; e = ...; c = ...
+phi = (p-1) * (q-1)
+d = pow(e, -1, phi)
+m = pow(c, d, p*q)
+result = bytes.fromhex(hex(m)[2:])
+# Check if base64 encoded
+import base64
+try:
+    decoded = base64.b64decode(result).decode()
+    print(f"Base64 decoded: {decoded}")
+except:
+    print(f"Raw: {result}")
+```
+
 ## Common Patterns
 
 - **RSA basics:** `phi = (p-1)*(q-1)`, `d = inverse(e, phi)`, `m = pow(c, d, n)`. See [rsa-attacks.md](rsa-attacks.md) for full examples.

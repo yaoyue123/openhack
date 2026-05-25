@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:\\\\Users\\\\a402-3\\\\Desktop\\\\测试\\\\openhack\" && npx tsc --noEmit 2>&1 | head -50)",
+      "Bash(cd \"C:\\\\Users\\\\a402-3\\\\Desktop\\\\测试\\\\openhack\" && npm test 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\a402-3\\\\Desktop\\\\测试\\\\openhack\" && npx tsc --noEmit 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\a402-3\\\\Desktop\\\\测试\\\\openhack\" && npx tsc --noEmit 2>&1 && npm test 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\a402-3\\\\Desktop\\\\测试\\\\openhack\" && npm run build 2>&1)"
+    ]
+  }
+}
